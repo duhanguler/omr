@@ -15,7 +15,7 @@ OMR checking software that can read and evaluate OMR sheets scanned at any angle
 # Contributors
 
 - [duhanguler](https://github.com/duhanguler)
-- [elffbykll]((https://github.com/elffbykll)
+- [elffbykll](https://github.com/elffbykll)
 - [erayerglc](https://github.com/erayerglc)
 
 ## Getting started
