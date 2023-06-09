@@ -18,6 +18,9 @@ OMR checking software that can read and evaluate OMR sheets scanned at any angle
 - [elffbykll](https://github.com/elffbykll)
 - [erayerglc](https://github.com/erayerglc)
 
+You can contribute our project with TODO sections.
+For example ![To_Do](https://i.imgur.com/clNhDCM.png)
+
 ## Getting started
 
 ![Setup Time](https://img.shields.io/badge/Setup_Time-10_min-blue.svg)
