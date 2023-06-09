@@ -9,7 +9,8 @@ OMR checking software that can read and evaluate OMR sheets scanned at any angle
 | ✅ **Customizable**    | Easily custom  OMR layouts with JSON templating.                                                                                                |
 | 📊 **Visually Rich**   | Visually rich console using.                                                                                                |
 | 🎈 **Lightweight**     | Very minimal and lightweight core code.                                                                                                                                                                                     |
-| 🏫 **Large Scale**     | Tested with Nokta Tek Egitim Kurumlari & Cozum Yenimahalle exams.                                                         |
+| 🏫 **Large Scale**     | Tested with Nokta Tek Egitim Kurumlari & Cozum Yenimahalle exams.                                                                                                                           |
+
 
 ## Getting started
 
