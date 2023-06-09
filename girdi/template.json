@@ -1,0 +1,93 @@
+{
+  "pageDimensions": [2134, 1999],
+  "bubbleDimensions": [50, 50],
+  "customLabels": {
+    "SinavKodu": ["sinavkodu11",
+    "sinavkodu12",
+    "sinavkodu13",
+    "sinavkodu14",
+    "sinavkodu15",
+    "sinavkodu16"],
+    "TCKIMLIKNO": [
+      "tckimlikno0",
+      "tckimlikno1",
+      "tckimlikno2",
+      "tckimlikno3",
+      "tckimlikno4",
+      "tckimlikno5",
+      "tckimlikno6",
+      "tckimlikno7",
+      "tckimlikno8",
+      "tckimlikno9",
+      "tckimlikno10"
+    ],
+    "q125": ["q125_1", "q125_2", "q125_3", "q125_4", "q125_5", "q125_6", "q125_7", "q125_8", "q125_9", "q125_10"
+    ,"q125_11", "q125_12", "q125_13", "q125_14", "q125_15", "q125_16", "q125_17", "q125_18", "q125_19", "q125_20"
+    ,"q125_21", "q125_22", "q125_23", "q125_24", "q125_25"],
+    "q2650": ["q2650_1", "q2650_2", "q2650_3", "q2650_4", "q2650_5", "q2650_6", "q2650_7", "q2650_8", "q2650_9", "q2650_10"
+    ,"q2650_11", "q2650_12", "q2650_13", "q2650_14", "q2650_15", "q2650_16", "q2650_17", "q2650_18", "q2650_19", "q2650_20"
+    ,"q2650_21", "q2650_22", "q2650_23", "q2650_24", "q2650_25"]
+  },
+  "fieldBlocks": {
+    "MCQ_Block_SinavKodu": {
+      "fieldType": "QTYPE_INT",
+      "fieldLabels": [
+        "sinavkodu11",
+        "sinavkodu12",
+        "sinavkodu13",
+        "sinavkodu14",
+        "sinavkodu15",
+        "sinavkodu16"
+      ],
+      "bubblesGap": 62,
+      "labelsGap": 57,
+      "origin": [93, 290]
+    },
+    "MCQ_Block_TCKIMLIKNO": {
+      "fieldType": "QTYPE_INT",
+      "fieldLabels": [
+        "tckimlikno0",
+        "tckimlikno1",
+        "tckimlikno2",
+        "tckimlikno3",
+        "tckimlikno4",
+        "tckimlikno5",
+        "tckimlikno6",
+        "tckimlikno7",
+        "tckimlikno8",
+        "tckimlikno9",
+        "tckimlikno10"
+      ],
+      "bubblesGap": 62,
+      "labelsGap": 58,
+      "origin": [550, 295]
+    },
+    "MCQ_Block_Q125": {
+      "fieldType": "QTYPE_MCQ5",
+      "fieldLabels": ["q125_1", "q125_2", "q125_3", "q125_4", "q125_5", "q125_6", "q125_7", "q125_8", "q125_9", "q125_10"
+      ,"q125_11", "q125_12", "q125_13", "q125_14", "q125_15", "q125_16", "q125_17", "q125_18", "q125_19", "q125_20"
+      ,"q125_21", "q125_22", "q125_23", "q125_24", "q125_25"],
+      "bubblesGap": 57,
+      "labelsGap": 62,
+      "origin": [1375, 233]
+    },
+    "MCQ_Block_Q2650": {
+      "fieldType": "QTYPE_MCQ5",
+      "fieldLabels": ["q2650_1", "q2650_2", "q2650_3", "q2650_4", "q2650_5", "q2650_6", "q2650_7", "q2650_8", "q2650_9", "q2650_10"
+      ,"q2650_11", "q2650_12", "q2650_13", "q2650_14", "q2650_15", "q2650_16", "q2650_17", "q2650_18", "q2650_19", "q2650_20"
+      ,"q2650_21", "q2650_22", "q2650_23", "q2650_24", "q2650_25"],
+      "bubblesGap": 57,
+      "labelsGap": 62,
+      "origin": [1743, 233]
+    }
+  },
+  "preProcessors": [
+    {
+      "name": "CropOnMarkers",
+      "options": {
+        "relativePath": "omr_marker.jpg",
+        "sheetToMarkerWidthRatio": 17
+      }
+    }
+  ]
+}
