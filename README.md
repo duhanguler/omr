@@ -3,14 +3,14 @@
 OMR checking software that can read and evaluate OMR sheets scanned at any angle and having any color. Independent for scanner or mobile camera. Just you need image!
 
 | Specs <img width=200/> | ![Current_Speed](https://img.shields.io/badge/Speed-220+_OMRs/min-blue.svg?style=flat-square) ![Min Resolution](https://img.shields.io/badge/Min_Resolution-640x480-blue.svg?style=flat-square) <img width=200/> |
-| :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| :--------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 💯 **Accurate**        | Currently nearly 100% accurate on good quality document scans; and about 95% accurate on mobile images.                                                                                                          |
-| 💪🏿 **Robust**          | Supports low resolution, with Robust feature.                                                                       |
+| 💪🏿 **Robust**          | Supports low resolution  with Robust feature.                                                                                                                                                                    |
 | ⏩ **Fast**            | Current processing speed without any optimization is 220 OMRs/minute.                                                                                                                                            |
-| ✅ **Customizable**    | Easily custom  OMR layouts.                                                                                                 |
-| 📊 **Visually Rich**   | Visually rich console using.                                                                                                |
-| 🎈 **Lightweight**     | Very minimal and lightweight core code.                                                                                                                                                                                     |
-| 🏫 **Large Scale**     | Tested with Nokta Tek Egitim Kurumlari and Cozum Yenimahalle exams.                                                                                                                           |
+| ✅ **Customizable**    | Easily custom  OMR layouts.                                                                                                                                                                                      |
+| 📊 **Visually Rich**   | Visually rich console using.                                                                                                                                                                                     |
+| 🎈 **Lightweight**     | Very minimal and lightweight core code.                                                                                                                                                                          |
+| 🏫 **Large Scale**     | Tested with [Nokta Tek Egitim Kurumlari](https://noktatek.com.tr) and Cozum Yenimahalle exams.                                                                                                                   |
 
 
 ## Getting started
