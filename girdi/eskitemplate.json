@@ -1,0 +1,244 @@
+{
+  "Dimensions": [
+    2134,
+    1999
+  ],
+  "BubbleDimensions": [
+    50,
+    50
+  ],
+  "Options": {
+    "Marker": {
+      "RelativePath": "omr_marker.jpg",
+      "SheetToMarkerWidthRatio": 17
+    }
+  },
+  "Concatenations": {
+    "SINAVKODU": [
+      "sinavkodu11",
+      "sinavkodu12",
+      "sinavkodu13",
+      "sinavkodu14",
+      "sinavkodu15",
+      "sinavkodu16"
+    ],
+    "TCKIMLIKNO": [
+      "tckimlikno0",
+      "tckimlikno1",
+      "tckimlikno2",
+      "tckimlikno3",
+      "tckimlikno4",
+      "tckimlikno5",
+      "tckimlikno6",
+      "tckimlikno7",
+      "tckimlikno8",
+      "tckimlikno9",
+      "tckimlikno10"
+    ]
+  },
+  "Singles": [
+    "q1",
+    "q2",
+    "q3",
+    "q4",
+    "q5",
+    "q6",
+    "q7",
+    "q8",
+    "q9",
+    "q10",
+    "q11",
+    "q12",
+    "q13",
+    "q14",
+    "q15",
+    "q16",
+    "q17",
+    "q18",
+    "q19",
+    "q20",
+    "q21",
+    "q22",
+    "q23",
+    "q24",
+    "q25",
+    "q26",
+    "q27",
+    "q28",
+    "q29",
+    "q30",
+    "q31",
+    "q32",
+    "q33",
+    "q34",
+    "q35",
+    "q36",
+    "q37",
+    "q38",
+    "q39",
+    "q40",
+    "q41",
+    "q42",
+    "q43",
+    "q44",
+    "q45",
+    "q46",
+    "q47",
+    "q48",
+    "q49",
+    "q50"
+  ],
+  "QBlocks": {
+    "SinavKodu": {
+      "qType": "QTYPE_SINAVKODU",
+      "orig": [
+        106,
+        301
+      ],
+      "bigGaps": [
+        128,
+        11
+      ],
+      "gaps": [
+        57,
+        62
+      ],
+      "qNos": [
+        [
+          [
+            "sinavkodu11",
+            "sinavkodu12",
+            "sinavkodu13",
+            "sinavkodu14",
+            "sinavkodu15",
+            "sinavkodu16"
+          ]
+        ]
+      ]
+    },
+    "TCKimlikNo": {
+      "qType": "QTYPE_TCKIMLIKNO",
+      "orig": [
+        563,
+        302
+      ],
+      "bigGaps": [
+        115,
+        11
+      ],
+      "gaps": [
+        57,
+        62
+      ],
+      "qNos": [
+        [
+          [
+            "tckimlikno0",
+            "tckimlikno1",
+            "tckimlikno2",
+            "tckimlikno3",
+            "tckimlikno4",
+            "tckimlikno5",
+            "tckimlikno6",
+            "tckimlikno7",
+            "tckimlikno8",
+            "tckimlikno9",
+            "tckimlikno10"
+          ]
+        ]
+      ]
+    },
+    "Mcq1": {
+      "qType": "QTYPE_MCQ5",
+      "orig": [
+        1375,
+        233
+      ],
+      "bigGaps": [
+        115,
+        181
+      ],
+      "gaps": [
+        57,
+        62
+      ],
+      "qNos": [
+        [
+          [
+            "q1",
+            "q2",
+            "q3",
+            "q4",
+            "q5",
+            "q6",
+            "q7",
+            "q8",
+            "q9",
+            "q10",
+            "q11",
+            "q12",
+            "q13",
+            "q14",
+            "q15",
+            "q16",
+            "q17",
+            "q18",
+            "q19",
+            "q20",
+            "q21",
+            "q22",
+            "q23",
+            "q24",
+            "q25"
+          ]
+        ]
+      ]
+    },
+    "Mcq2": {
+      "qType": "QTYPE_MCQ5",
+      "orig": [
+        1743,
+        233
+      ],
+      "bigGaps": [
+        115,
+        181
+      ],
+      "gaps": [
+        57,
+        62
+      ],
+      "qNos": [
+        [
+          [
+            "q26",
+            "q27",
+            "q28",
+            "q29",
+            "q30",
+            "q31",
+            "q32",
+            "q33",
+            "q34",
+            "q35",
+            "q36",
+            "q37",
+            "q38",
+            "q39",
+            "q40",
+            "q41",
+            "q42",
+            "q43",
+            "q44",
+            "q45",
+            "q46",
+            "q47",
+            "q48",
+            "q49",
+            "q50"
+          ]
+        ]
+      ]
+    }
+  }
+}
