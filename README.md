@@ -12,6 +12,11 @@ OMR checking software that can read and evaluate OMR sheets scanned at any angle
 | 🎈 **Lightweight**     | Very minimal and lightweight core code.                                                                                                                                                                          |
 | 🏫 **Large Scale**     | Tested with [Nokta Tek Egitim Kurumlari](https://noktatek.com.tr) and Cozum Yenimahalle exams.                                                                                                                   |
 
+# Contributors
+
+- [duhanguler](https://github.com/duhanguler)
+- [elffbykll]((https://github.com/elffbykll))
+- [erayerglc](https://github.com/erayerglc)
 
 ## Getting started
 
