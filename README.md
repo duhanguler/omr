@@ -5,14 +5,18 @@
 **Zero-calibration Optical Mark Recognition engine with QR auto-template detection, blank-form auto-grid finder, live browser camera scanner, printable ArUco sheet generator, Classical Test Theory psychometrics, FastAPI REST API, and React Web Studio.**
 
 [![CI](https://github.com/duhanguler/omr/actions/workflows/ci.yml/badge.svg)](https://github.com/duhanguler/omr/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/duhanguler/omr?style=flat-square&color=1D4ED8)](https://github.com/duhanguler/omr/releases)
+[![PyPI](https://img.shields.io/pypi/v/omrkit?style=flat-square&color=0F8A5F&logo=pypi&logoColor=white)](https://pypi.org/project/omrkit/)
+[![Live Demo](https://img.shields.io/badge/Live_Demo-OMRKit_Studio-1D4ED8?style=flat-square&logo=render&logoColor=white)](https://omrkit-studio.onrender.com/)
+[![Release](https://img.shields.io/github/v/release/duhanguler/omr?style=flat-square&color=14181F)](https://github.com/duhanguler/omr/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-0F8A5F.svg?style=flat-square)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-14181F.svg?style=flat-square)](pyproject.toml)
 [![Docker GHCR](https://img.shields.io/badge/Docker-ghcr.io%2Fduhanguler%2Fomr-2496ED.svg?style=flat-square)](https://github.com/duhanguler/omr/pkgs/container/omr)
 
-[English](README.md) · [Türkçe](README.tr.md) · [Deployment & PyPI Guide](docs/DEPLOYMENT.md) · [Examples](examples/) · [Contributing](CONTRIBUTING.md)
+[**Try Live Demo**](https://omrkit-studio.onrender.com/) · [**PyPI**](https://pypi.org/project/omrkit/) · [English](README.md) · [Türkçe](README.tr.md) · [Deployment Guide](docs/DEPLOYMENT.md) · [Examples](examples/) · [Contributing](CONTRIBUTING.md)
 
 </div>
+
+> **Live Web Studio Demo:** Try OMRKit directly in your browser at **[omrkit-studio.onrender.com](https://omrkit-studio.onrender.com/)** — click **Try Demo** in the top bar to scan & grade a 5-student exam cohort, test **Live Camera**, or generate printable ArUco + QR sheets. *(Hosted on Render's free tier; first load after inactivity may take ~20–30s to wake up.)*
 
 ---
 
@@ -56,21 +60,19 @@ Traditional open-source OMR scripts force you to hand-edit pixel coordinates in 
 
 ## Quickstart (60 Seconds)
 
-### 1. Run Instantly (Docker / One-Click Cloud Demo / Python)
+### 1. Install from PyPI, Run via Docker, or Try Online
 
 ```bash
-# Option A: Prebuilt official Docker image (zero build!)
-docker run -p 8000:8000 ghcr.io/duhanguler/omr:latest
+# Option A: Install from PyPI (recommended)
+pip install omrkit              # Core CV engine + PDF + ArUco/QR + Sheet Generator + CLI
+pip install "omrkit[all]"       # Full platform: adds Web Studio, FastAPI REST API & Excel
 
-# Option B: Install from source (or `pip install "omrkit[all]"` once PyPI publishing is enabled)
-git clone https://github.com/duhanguler/omr.git
-cd omr
-pip install -e ".[all]"
+# Option B: Prebuilt official Docker image (zero build!)
+docker run -p 8000:8000 ghcr.io/duhanguler/omr:latest
 ```
 
-**One-Click Free Cloud Live Demo:**
-- **Render Blueprint:** [![Deploy to Render](https://img.shields.io/badge/Deploy_to-Render-14181F?style=flat-square&logo=render)](https://dashboard.render.com/blueprint/new?repo=https://github.com/duhanguler/omr)
-- **HuggingFace Spaces (Docker + Auto-Sync):** See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the 2-minute free HTTPS setup (supports browser **Live Camera**!).
+- **Live Public Demo:** [https://omrkit-studio.onrender.com/](https://omrkit-studio.onrender.com/) (OpenAPI docs at [`/docs`](https://omrkit-studio.onrender.com/docs))
+- **Self-Host Your Own Copy (1-Click Free Render Blueprint):** [![Deploy to Render](https://img.shields.io/badge/Deploy_to-Render-14181F?style=flat-square&logo=render)](https://dashboard.render.com/blueprint/new?repo=https://github.com/duhanguler/omr) · See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for GHCR, Render & HuggingFace PRO options.
 
 ### 2. Generate a Print-Ready ArUco + QR Sheet
 

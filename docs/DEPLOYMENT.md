@@ -4,7 +4,24 @@ This guide covers publishing **OMRKit** to PyPI via tokenless OIDC Trusted Publi
 
 ---
 
-## 1. Run via Official GHCR Docker Image (Zero Build)
+## Live Demo
+
+- **Hosted Public Demo (Render):** https://omrkit-studio.onrender.com/ (OpenAPI: https://omrkit-studio.onrender.com/docs)
+- **PyPI Package:** https://pypi.org/project/omrkit/
+- **Container Image:** `ghcr.io/duhanguler/omr:latest`
+
+---
+
+## 1. One-Click Free Live Demo on Render (Recommended)
+
+`render.yaml` is included at the repository root and runs the full Python + OpenCV + ReportLab + Web Studio Docker image for free over HTTPS (supporting browser `getUserMedia` **Live Camera** scanning):
+
+1. Open `https://dashboard.render.com/blueprint/new?repo=https://github.com/duhanguler/omr`
+2. Click **Apply** — Render builds `Dockerfile` with `OMRKIT_DEMO_MODE=true` and `/api/health` health checks automatically.
+
+---
+
+## 2. Run via Official GHCR Docker Image (Zero Build)
 
 Every tagged release publishes a ready-to-run image to GitHub Container Registry:
 
@@ -26,29 +43,16 @@ docker run -p 8000:8000 \
 
 ---
 
-## 2. Free Permanent Live Demo on HuggingFace Spaces (Recommended)
+## 3. Deploy to HuggingFace Spaces (Requires HF PRO for Docker SDK)
 
-HuggingFace Spaces provides free HTTPS hosting (required for browser `getUserMedia` **Live Camera** scanning) with automatic GitHub sync:
+> **Note:** HuggingFace currently requires a **PRO** subscription to host `sdk: docker` Spaces on `cpu-basic`. For a 100% free Docker deployment, use **Render** above.
 
-1. Create a new Space at `https://huggingface.co/new-space`:
-   - **Space name:** `omrkit-studio`
-   - **SDK:** `Docker` → **Blank**
-   - **Hardware:** Free CPU Basic
+1. Create a new Space at `https://huggingface.co/new-space` (`SDK: Docker → Blank`, name `omrkit-studio`).
 2. Create a **Write** access token at `https://huggingface.co/settings/tokens`.
 3. In your GitHub repository (`Settings → Secrets and variables → Actions`):
    - **Repository Secret:** `HF_TOKEN` = `<your_hf_write_token>`
    - **Repository Variable:** `HF_SPACE_REPO` = `<your_hf_username>/omrkit-studio`
 4. Run **Actions → Deploy Live Demo (HuggingFace Spaces) → Run workflow** (or push to `main`).
-   Every future push to `main` automatically updates your live Space!
-
----
-
-## 3. One-Click Free Live Demo on Render
-
-`render.yaml` is included at the repository root:
-
-1. Open `https://dashboard.render.com/blueprint/new?repo=https://github.com/duhanguler/omr`
-2. Click **Apply** — Render builds `Dockerfile` with `OMRKIT_DEMO_MODE=true` and `/api/health` checks automatically.
 
 ---
 

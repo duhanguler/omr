@@ -4,9 +4,17 @@
 
 **QR otomatik şablon tanımalı, boş formdan otomatik balon ızgara buluculu, canlı kamera tarayıcılı Optik Form Okuma (OMR) motoru, ArUco PDF form üreteci, sınav psikometrisi, FastAPI REST API ve React Web Studio.**
 
-[English](README.md) · [Türkçe](README.tr.md) · [Örnekler](examples/) · [Katkı Rehberi](CONTRIBUTING.md)
+[![CI](https://github.com/duhanguler/omr/actions/workflows/ci.yml/badge.svg)](https://github.com/duhanguler/omr/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/omrkit?style=flat-square&color=0F8A5F&logo=pypi&logoColor=white)](https://pypi.org/project/omrkit/)
+[![Canlı Demo](https://img.shields.io/badge/Canl%C4%B1_Demo-OMRKit_Studio-1D4ED8?style=flat-square&logo=render&logoColor=white)](https://omrkit-studio.onrender.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-0F8A5F.svg?style=flat-square)](LICENSE)
+[![Docker GHCR](https://img.shields.io/badge/Docker-ghcr.io%2Fduhanguler%2Fomr-2496ED.svg?style=flat-square)](https://github.com/duhanguler/omr/pkgs/container/omr)
+
+[**Canlı Demo**](https://omrkit-studio.onrender.com/) · [**PyPI**](https://pypi.org/project/omrkit/) · [English](README.md) · [Türkçe](README.tr.md) · [Dağıtım Rehberi](docs/DEPLOYMENT.md) · [Örnekler](examples/) · [Katkı Rehberi](CONTRIBUTING.md)
 
 </div>
+
+> **Canlı Web Studio Demosu:** Kurulum yapmadan doğrudan tarayıcınızda deneyin → **[omrkit-studio.onrender.com](https://omrkit-studio.onrender.com/)** *(Render ücretsiz katmanında ilk açılış ~20–30 sn sürebilir.)*
 
 ---
 
@@ -29,9 +37,9 @@
 ## Hızlı Başlangıç
 
 ```bash
-git clone https://github.com/duhanguler/omr.git
-cd omr
-pip install -e ".[all]"
+# PyPI üzerinden kurulum (önerilen):
+pip install omrkit              # Çekirdek CV motoru + PDF + ArUco/QR + CLI
+pip install "omrkit[all]"       # Tam paket: Web Studio, FastAPI REST API ve Excel desteği
 ```
 
 ### 1. Türkçe 50 Soruluk Optik Form + Şablon Üret
