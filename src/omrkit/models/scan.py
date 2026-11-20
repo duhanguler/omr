@@ -79,9 +79,24 @@ class SheetResult(BaseModel):
         if field_id in self.fields:
             reading = self.fields[field_id]
             reading.value = new_value
-            reading.selected_options = list(new_value) if new_value else []
+            valid_options = {b.option for b in reading.bubbles}
+            if not new_value:
+                selected_opts: list[str] = []
+            elif new_value in valid_options:
+                selected_opts = [new_value]
+            else:
+                selected_opts = list(new_value)
+            reading.selected_options = selected_opts
+            selected_set = set(selected_opts)
+            for bubble in reading.bubbles:
+                bubble.selected = bubble.option in selected_set
             reading.confidence = 1.0
             reading.status = "blank" if new_value == "" else "ok"
+            if self.fields:
+                self.overall_confidence = round(
+                    sum(f.confidence for f in self.fields.values()) / float(len(self.fields)),
+                    4,
+                )
         elif field_id in self.grouped_values:
             self.grouped_values[field_id] = new_value
         self.review_items = [item for item in self.review_items if item.field_id != field_id]

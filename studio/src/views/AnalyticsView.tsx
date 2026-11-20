@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Award, Download, FileSpreadsheet, FileText, Play } from "lucide-react";
 import {
   exportReportFile,
@@ -31,9 +31,28 @@ export function AnalyticsView({
   report,
   onReportReady,
 }: AnalyticsViewProps) {
-  const [selectedPolicyName, setSelectedPolicyName] = useState<string>("standard");
+  const [selectedPolicyName, setSelectedPolicyName] = useState<string>(
+    report?.policy_name ?? "standard"
+  );
+  const [selectedBooklet, setSelectedBooklet] = useState<string>("A");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (report?.policy_name) {
+      setSelectedPolicyName(report.policy_name);
+    }
+  }, [report?.policy_name]);
+
+  const bookletNames = answerKey ? Object.keys(answerKey.booklets ?? {}) : [];
+  const hasBooklets = bookletNames.length > 0;
+  const activeBooklet = hasBooklets
+    ? bookletNames.includes(selectedBooklet)
+      ? selectedBooklet
+      : answerKey?.default_booklet && bookletNames.includes(answerKey.default_booklet)
+        ? answerKey.default_booklet
+        : bookletNames[0]
+    : "";
 
   const policy =
     policies.find((p) => p.name === selectedPolicyName) ?? {
@@ -46,7 +65,12 @@ export function AnalyticsView({
       sections: [],
     };
 
-  const answersEntries = answerKey ? Object.entries(answerKey.answers) : [];
+  const activeAnswersMap = answerKey
+    ? hasBooklets
+      ? answerKey.booklets[activeBooklet] ?? {}
+      : answerKey.answers ?? {}
+    : {};
+  const answersEntries = Object.entries(activeAnswersMap);
 
   async function handleRunGrading() {
     if (!answerKey || sheets.length === 0) {
@@ -124,9 +148,19 @@ export function AnalyticsView({
                 try {
                   const parsed = JSON.parse(await file.text()) as AnswerKey;
                   onUpdateAnswerKey(parsed);
+                  const bks = Object.keys(parsed.booklets ?? {});
+                  if (bks.length > 0) {
+                    setSelectedBooklet(
+                      parsed.default_booklet && bks.includes(parsed.default_booklet)
+                        ? parsed.default_booklet
+                        : bks[0]
+                    );
+                  }
                   setError(null);
                 } catch (err) {
                   setError(err instanceof Error ? err.message : "Invalid answer key JSON");
+                } finally {
+                  e.target.value = "";
                 }
               }}
             />
@@ -174,10 +208,26 @@ export function AnalyticsView({
       {/* Answer Key Quick Editor */}
       {answerKey && answersEntries.length > 0 && (
         <section className="paper-card p-4 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-secondary)]">
-              Answer Key — {answerKey.exam_name} ({answersEntries.length} questions)
-            </h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-secondary)]">
+                Answer Key — {answerKey.exam_name} ({answersEntries.length} questions)
+              </h2>
+              {hasBooklets && (
+                <select
+                  aria-label="Select booklet"
+                  className="workbench-input !py-0.5 !px-2 text-xs font-mono"
+                  value={activeBooklet}
+                  onChange={(e) => setSelectedBooklet(e.target.value)}
+                >
+                  {bookletNames.map((bk) => (
+                    <option key={bk} value={bk}>
+                      Booklet {bk}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
             <span className="text-xs text-[var(--ink-muted)]">Click any key to edit inline</span>
           </div>
           <div className="grid grid-cols-5 sm:grid-cols-10 gap-1.5 max-h-40 overflow-y-auto">
@@ -191,12 +241,30 @@ export function AnalyticsView({
                   <span className="text-[var(--ink-muted)]">{qid}</span>
                   <input
                     type="text"
-                    maxLength={4}
-                    className="w-8 text-right font-semibold bg-transparent focus:outline-none text-[var(--ink-primary)]"
+                    maxLength={6}
+                    className="w-9 text-right font-semibold bg-transparent focus:outline-none text-[var(--ink-primary)]"
                     value={display}
                     onChange={(e) => {
-                      const next = { ...answerKey.answers, [qid]: e.target.value.toUpperCase() };
-                      onUpdateAnswerKey({ ...answerKey, answers: next });
+                      const rawVal = e.target.value.toUpperCase();
+                      const parsedVal = rawVal.includes("/")
+                        ? rawVal
+                            .split("/")
+                            .map((s) => s.trim())
+                            .filter(Boolean)
+                        : rawVal;
+                      if (hasBooklets) {
+                        const nextBooklet = {
+                          ...(answerKey.booklets[activeBooklet] ?? {}),
+                          [qid]: parsedVal,
+                        };
+                        onUpdateAnswerKey({
+                          ...answerKey,
+                          booklets: { ...answerKey.booklets, [activeBooklet]: nextBooklet },
+                        });
+                      } else {
+                        const next = { ...answerKey.answers, [qid]: parsedVal };
+                        onUpdateAnswerKey({ ...answerKey, answers: next });
+                      }
                     }}
                   />
                 </div>

@@ -31,6 +31,9 @@ function playSuccessTone() {
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.16);
     osc.connect(gain);
     gain.connect(ctx.destination);
+    osc.onended = () => {
+      void ctx.close().catch(() => {});
+    };
     osc.start();
     osc.stop(ctx.currentTime + 0.17);
   } catch {
@@ -47,6 +50,9 @@ export function CameraScanner({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const busyRef = useRef(false);
+  const mountedRef = useRef(true);
+  const captureSeqRef = useRef(0);
+  const flashTimerRef = useRef<number | null>(null);
 
   const [cameraActive, setCameraActive] = useState(false);
   const [autoLock, setAutoLock] = useState(false);
@@ -65,7 +71,16 @@ export function CameraScanner({
     }
   }, []);
 
-  useEffect(() => stopCamera, [stopCamera]);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (flashTimerRef.current !== null) {
+        window.clearTimeout(flashTimerRef.current);
+      }
+      stopCamera();
+    };
+  }, [stopCamera]);
 
   async function startCamera() {
     setError(null);
@@ -82,6 +97,10 @@ export function CameraScanner({
         },
         audio: false,
       });
+      if (!mountedRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -89,11 +108,13 @@ export function CameraScanner({
       }
       setCameraActive(true);
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? `Could not open camera: ${err.message}`
-          : "Camera permission denied or no camera detected."
-      );
+      if (mountedRef.current) {
+        setError(
+          err instanceof Error
+            ? `Could not open camera: ${err.message}`
+            : "Camera permission denied or no camera detected."
+        );
+      }
     }
   }
 
@@ -116,12 +137,18 @@ export function CameraScanner({
         const blob = await new Promise<Blob | null>((resolve) =>
           canvas.toBlob(resolve, "image/jpeg", 0.9)
         );
-        if (!blob) return;
+        if (!blob || !mountedRef.current) return;
 
-        const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(11, 19);
-        const frameFile = new File([blob], `camera_${stamp}.jpg`, { type: "image/jpeg" });
+        captureSeqRef.current += 1;
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(11, 23);
+        const frameFile = new File(
+          [blob],
+          `camera_${stamp}_${captureSeqRef.current}.jpg`,
+          { type: "image/jpeg" }
+        );
         const targetTemplate = useQrAuto || !activeTemplate ? "auto" : activeTemplate;
         const res = await scanFiles([frameFile], targetTemplate);
+        if (!mountedRef.current) return;
         const sheet = res.sheets[0];
 
         if (sheet && !sheet.error) {
@@ -130,18 +157,25 @@ export function CameraScanner({
           onSheetCaptured(sheet, overlayUrl);
           playSuccessTone();
           setFlashOk(true);
-          setTimeout(() => setFlashOk(false), 600);
+          if (flashTimerRef.current !== null) {
+            window.clearTimeout(flashTimerRef.current);
+          }
+          flashTimerRef.current = window.setTimeout(() => {
+            if (mountedRef.current) setFlashOk(false);
+          }, 600);
           setError(null);
         } else if (!silentIfNoLock && sheet?.error) {
           setError(sheet.error);
         }
       } catch (err) {
-        if (!silentIfNoLock) {
+        if (!silentIfNoLock && mountedRef.current) {
           setError(err instanceof Error ? err.message : "Frame scan failed.");
         }
       } finally {
         busyRef.current = false;
-        setScanning(false);
+        if (mountedRef.current) {
+          setScanning(false);
+        }
       }
     },
     [activeTemplate, onSheetCaptured, useQrAuto]

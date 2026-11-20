@@ -47,8 +47,10 @@ def render_synthetic_filled_sheet(
             expected = answers.get(field_id, "")
             if not expected:
                 continue
+            valid_opts = {c.option for c in coords}
+            target_opts = {expected} if expected in valid_opts else set(expected)
             for coord in coords:
-                if coord.option not in expected:
+                if coord.option not in target_opts:
                     continue
                 cx = round(coord.cx + rng.uniform(-1.0, 1.0))
                 cy = round(coord.cy + rng.uniform(-1.0, 1.0))

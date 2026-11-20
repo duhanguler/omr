@@ -8,7 +8,7 @@ from omrkit.models.template import ValidatorType
 def validate_tr_tckn(value: str) -> bool:
     """Validate an 11-digit Turkish Republic Identity Number (TC Kimlik No)."""
     digits = value.strip()
-    if len(digits) != 11 or not digits.isdigit() or digits[0] == "0":
+    if len(digits) != 11 or not digits.isascii() or not digits.isdigit() or digits[0] == "0":
         return False
     nums = [int(ch) for ch in digits]
     odd_sum = sum(nums[0:9:2])  # 1st, 3rd, 5th, 7th, 9th
@@ -21,7 +21,7 @@ def validate_tr_tckn(value: str) -> bool:
 def validate_luhn(value: str) -> bool:
     """Validate a numeric identifier using the standard Luhn mod-10 checksum."""
     digits = value.strip()
-    if len(digits) < 2 or not digits.isdigit():
+    if len(digits) < 2 or not digits.isascii() or not digits.isdigit():
         return False
     total = 0
     for idx, ch in enumerate(reversed(digits)):
@@ -37,7 +37,7 @@ def validate_luhn(value: str) -> bool:
 def validate_digits(value: str) -> bool:
     """Verify the value consists solely of ASCII digits and is non-empty."""
     stripped = value.strip()
-    return bool(stripped) and stripped.isdigit()
+    return bool(stripped) and stripped.isascii() and stripped.isdigit()
 
 
 def validate_non_empty(value: str) -> bool:

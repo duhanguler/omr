@@ -1,5 +1,6 @@
 """OMRKit — Modern Optical Mark Recognition SDK, Sheet Generator & Exam Psychometrics."""
 
+from omrkit._version import __version__
 from omrkit.core.auto_scanner import (
     resolve_template_for_image,
     scan_file_auto,
@@ -31,8 +32,6 @@ from omrkit.models import (
 )
 from omrkit.vision.grid_finder import detect_layout_from_blank
 from omrkit.vision.qr import detect_sheet_qr
-
-__version__ = "2.1.0"
 
 __all__ = [
     "AnswerKey",

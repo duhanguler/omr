@@ -96,14 +96,22 @@ class ExamGrader:
                 verdict = "correct"
                 points = c_pts
                 correct_cnt += 1
-            elif (
-                self.policy.partial_credit
-                and len(marked) > 1
-                and any(ch in acceptable for ch in marked)
-            ):
-                verdict = "correct"
-                points = round(c_pts / float(len(marked)), 4)
-                correct_cnt += 1
+            elif self.policy.partial_credit and len(marked) > 1:
+                marked_set = set(marked)
+                acc_set = set(acceptable)
+                hits = len(marked_set & acc_set)
+                if marked_set == acc_set:
+                    verdict = "correct"
+                    points = c_pts
+                    correct_cnt += 1
+                elif hits > 0 and len(marked_set) <= max(2, len(acc_set) + 1):
+                    verdict = "correct"
+                    points = round(c_pts * (hits / float(len(marked_set))), 4)
+                    correct_cnt += 1
+                else:
+                    verdict = "incorrect"
+                    points = i_pts
+                    incorrect_cnt += 1
             else:
                 verdict = "incorrect"
                 points = i_pts

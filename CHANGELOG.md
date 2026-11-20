@@ -2,6 +2,19 @@
 
 All notable changes to **OMRKit** are documented in this file.
 
+## [2.1.1] - 2026-11-20
+
+### Security
+- **Blocked Local Filesystem Probing via HTTP API (`POST /api/scan`):** Disallowed `registration.marker_path` and `registration.reference_path` over the HTTP API (`HTTP 400`), preventing server file-existence oracle and local image file reads while preserving local CLI/Python SDK support.
+- **Prevented Remote OOM DoS Vectors:** Bounded API `dpi` (`72..350`), enforced a `40M` pixel budget and 0-page check in `omrkit.io.loader`, capped single label range expansions (`<= 2000`), total template fields (`<= 5000`), and page dimensions (`<= 12000px`).
+- **Sanitized `Content-Disposition` Filenames:** Transliterated Turkish/Unicode characters and stripped unsafe header characters in `/api/export/scorecard` and `/api/generate/bundle`, eliminating both header injection and HTTP 500 crashes on Turkish `sheet_id`s.
+
+### Fixed
+- **CV & Registration:** Replaced sum/diff heuristic in `order_quad_points` with centroid polar-angle ordering so 45°-tilted quads always yield 4 distinct corners; guarded `grid_finder` against tiny noisy Y-gaps and >26 option labels; fixed exact option token matching in `visualizer.py` and `benchmark.py`.
+- **Core, Grading & Validators:** Required ASCII digits in `validate_tr_tckn`, `validate_luhn`, and `validate_digits` (fixing `ValueError` crashes on Unicode superscript digits like `²`); emitted HITL `ReviewItem`s for ungrouped field validator failures; ensured unique `sheet_id` disambiguation across batches/uploads; fixed `partial_credit` gaming and exact multi-answer full credit; hardened `SheetSpec` column/width validation; supported digit-containing label prefixes (`sec1_q1..20`); hardened `migrator.py` validation and `customLabels` range matching; paginated 160+ question PDF scorecards; fixed `omrkit grade` JSON list input and `omrkit generate --questions` column auto-adjustment.
+- **REST API & Performance:** Cached `GET /api/presets` via `@lru_cache`; mapped invalid `/api/demo/cohort` presets (`400`) and invalid `/api/grade` policy ranges (`422`) instead of HTTP 500; synthesized valid TC Kimlik No checksums in `turkish_exam_50` demo cohorts; unified version strings via `omrkit._version.__version__`.
+- **Web Studio:** Fixed `TemplateDesigner` comma-separated options/labels input editing, browser freeze cap on range previews, and stuck canvas drag rectangles; debounced `SheetGenerator` PDF previews (`300ms` + `AbortController`) with column auto-clamping; fixed `CameraScanner` `AudioContext` leaks, sub-second duplicate capture IDs, and unmount races; fixed `App.tsx` HITL overrides to recompute confidence, update bubble flags, and invalidate stale grades; added multi-booklet Answer Key editor and policy sync in `AnalyticsView`; added visible error handling on **Try Demo** and file input resets across views.
+
 ## [2.1.0] - 2026-11-20
 
 ### Added

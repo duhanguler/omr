@@ -124,6 +124,28 @@ class OMRScanner:
                     if not valid:
                         fields[lbl].status = "invalid_checksum"
                         warnings.append(f"{lbl}: {msg}")
+                        field_bubbles = fields[lbl].bubbles
+                        xs = [b.cx for b in field_bubbles] or [0.0]
+                        ys = [b.cy for b in field_bubbles] or [0.0]
+                        pad = max(18.0, block.bubble_radius * 2.2)
+                        bbox = (
+                            max(0, int(min(xs) - pad)),
+                            max(0, int(min(ys) - pad)),
+                            int(max(xs) + pad),
+                            int(max(ys) + pad),
+                        )
+                        review_items.append(
+                            ReviewItem(
+                                field_id=lbl,
+                                block_name=block.name,
+                                reason="invalid_checksum",
+                                suggested_value=val,
+                                confidence=min(fields[lbl].confidence, 0.4),
+                                candidate_options=[b.option for b in field_bubbles],
+                                bbox=bbox,
+                                message=msg,
+                            )
+                        )
 
         confidences = [f.confidence for f in fields.values()]
         overall_conf = round(float(np.mean(confidences)) if confidences else 0.0, 4)
@@ -262,6 +284,7 @@ class OMRScanner:
                     progress_cb(idx, total_files, file_path.name)
 
         elapsed_ms = (perf_counter() - t0) * 1000.0
+        ensure_unique_sheet_ids(all_results)
         succeeded = sum(1 for r in all_results if r.error is None)
         failed = sum(1 for r in all_results if r.error is not None)
         flagged = sum(1 for r in all_results if r.error is None and len(r.review_items) > 0)
@@ -279,3 +302,22 @@ class OMRScanner:
             total_elapsed_ms=round(elapsed_ms, 2),
             sheets_per_minute=round(sheets_per_min, 1),
         )
+
+
+def ensure_unique_sheet_ids(sheets: list[SheetResult]) -> list[SheetResult]:
+    """Disambiguate duplicate sheet_ids within a batch (e.g., exam.jpg + exam.png)."""
+    seen: dict[str, int] = {}
+    for sheet in sheets:
+        base = sheet.sheet_id
+        count = seen.get(base, 0)
+        if count > 0:
+            candidate = f"{base}_{count + 1}"
+            while candidate in seen:
+                count += 1
+                candidate = f"{base}_{count + 1}"
+            sheet.sheet_id = candidate
+            seen[candidate] = 1
+            seen[base] = count + 1
+        else:
+            seen[base] = 1
+    return sheets

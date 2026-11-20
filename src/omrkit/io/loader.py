@@ -18,6 +18,11 @@ PDF_EXTENSIONS: frozenset[str] = frozenset({".pdf"})
 SUPPORTED_EXTENSIONS: frozenset[str] = IMAGE_EXTENSIONS | PDF_EXTENSIONS
 
 
+MAX_IMAGE_PIXELS: int = 40_000_000
+MIN_DPI: int = 36
+MAX_DPI: int = 600
+
+
 class DocumentLoadError(RuntimeError):
     """Raised when an input image or PDF cannot be opened or decoded."""
 
@@ -33,8 +38,18 @@ class LoadedPage:
     original_height: int
 
 
+def _validate_dpi(dpi: int) -> None:
+    if dpi < MIN_DPI or dpi > MAX_DPI:
+        raise DocumentLoadError(f"Invalid DPI {dpi}; must be between {MIN_DPI} and {MAX_DPI}.")
+
+
 def _pil_to_bgr(img: Image.Image) -> np.ndarray:
     """Apply EXIF orientation and convert a PIL Image to an OpenCV BGR array."""
+    w, h = img.size
+    if w <= 0 or h <= 0 or (w * h) > MAX_IMAGE_PIXELS:
+        raise DocumentLoadError(
+            f"Image dimensions ({w}x{h}) exceed the safe maximum of {MAX_IMAGE_PIXELS:,} pixels."
+        )
     oriented = ImageOps.exif_transpose(img)
     rgb = oriented.convert("RGB")
     arr = np.asarray(rgb, dtype=np.uint8)
@@ -47,10 +62,13 @@ def _render_pdf_document(
     dpi: int = 200,
     max_pages: int | None = None,
 ) -> list[LoadedPage]:
+    _validate_dpi(dpi)
     scale = dpi / 72.0
     pages: list[LoadedPage] = []
     try:
         page_count = len(pdf_doc)
+        if page_count == 0:
+            raise DocumentLoadError(f"PDF '{source_name}' contains 0 pages.")
         if max_pages is not None and page_count > max_pages:
             raise DocumentLoadError(
                 f"PDF '{source_name}' has {page_count} pages, exceeding the configured limit of {max_pages}."
@@ -58,6 +76,12 @@ def _render_pdf_document(
         for idx in range(page_count):
             page = pdf_doc[idx]
             try:
+                est_w, est_h = page.get_size()
+                est_px = int(est_w * scale) * int(est_h * scale)
+                if est_px > MAX_IMAGE_PIXELS:
+                    raise DocumentLoadError(
+                        f"PDF '{source_name}' page {idx + 1} at {dpi} DPI exceeds safe pixel limit."
+                    )
                 bitmap = page.render(scale=scale)
                 pil_img = bitmap.to_pil()
                 bgr = _pil_to_bgr(pil_img)

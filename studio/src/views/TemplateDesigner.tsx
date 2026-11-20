@@ -22,15 +22,20 @@ interface DragRect {
 }
 
 function expandLabelsPreview(labels: string[]): string[] {
+  const MAX_PREVIEW = 500;
   const out: string[] = [];
   for (const token of labels) {
-    const m = /^([^.\d]+)(\d+)\.{2,3}(\d+)$/.exec(token.trim());
+    if (out.length >= MAX_PREVIEW) break;
+    const m = /^(.*[^.\d])(\d+)\.{2,3}(\d+)$/.exec(token.trim());
     if (m) {
       const [, prefix, s, e] = m;
       const start = Number(s);
       const end = Number(e);
-      for (let i = start; i <= end; i += 1) {
-        out.push(`${prefix}${i}`);
+      if (end >= start) {
+        const limit = Math.min(end, start + (MAX_PREVIEW - out.length) - 1);
+        for (let i = start; i <= limit; i += 1) {
+          out.push(`${prefix}${i}`);
+        }
       }
     } else if (token.trim()) {
       out.push(token.trim());
@@ -74,6 +79,8 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
   );
   const [bgImageUrl, setBgImageUrl] = useState<string | null>(null);
   const [selectedIdx, setSelectedIdx] = useState<number>(0);
+  const [optionsDraft, setOptionsDraft] = useState<string>("");
+  const [labelsDraft, setLabelsDraft] = useState<string>("");
   const [dragRect, setDragRect] = useState<DragRect | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -85,8 +92,21 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
   const legacyRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (activeTemplate) setTemplate(activeTemplate);
+    if (activeTemplate) {
+      setTemplate(activeTemplate);
+      setSelectedIdx(0);
+    }
   }, [activeTemplate]);
+
+  const activeBlockForDraft = template.blocks[selectedIdx];
+  useEffect(() => {
+    if (activeBlockForDraft) {
+      setOptionsDraft(activeBlockForDraft.options.join(", "));
+      setLabelsDraft(activeBlockForDraft.labels.join(", "));
+    }
+    // Sync drafts whenever the user switches blocks or loads a new template
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIdx, template.name, template.blocks.length]);
 
   useEffect(() => {
     if (!bgImageUrl) {
@@ -361,6 +381,7 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 if (f) void handleAutoDetectGrids(f);
+                e.target.value = "";
               }}
             />
             <button
@@ -378,6 +399,7 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 if (f) void handleUploadBackground(f);
+                e.target.value = "";
               }}
             />
             <button
@@ -396,6 +418,7 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 if (f) void handleMigrateLegacy(f);
+                e.target.value = "";
               }}
             />
             <button type="button" onClick={handleDownloadJson} className="btn-secondary text-xs">
@@ -436,6 +459,9 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
               setDragRect((prev) => (prev ? { ...prev, x1: p.x, y1: p.y } : null));
             }}
             onMouseUp={handleMouseUp}
+            onMouseLeave={() => {
+              if (dragRect) setDragRect(null);
+            }}
             className="border border-[var(--border-strong)] rounded bg-white shadow-sm cursor-crosshair max-w-full"
           />
         </div>
@@ -625,15 +651,19 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
                 <input
                   type="text"
                   className="workbench-input w-full font-mono"
-                  value={selectedBlock.options.join(",")}
-                  onChange={(e) =>
-                    updateBlock({
-                      options: e.target.value
-                        .split(",")
-                        .map((s) => s.trim())
-                        .filter(Boolean),
-                    })
-                  }
+                  value={optionsDraft}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    setOptionsDraft(raw);
+                    const parsed = raw
+                      .split(",")
+                      .map((s) => s.trim())
+                      .filter(Boolean);
+                    if (parsed.length > 0) {
+                      updateBlock({ options: parsed });
+                    }
+                  }}
+                  onBlur={() => setOptionsDraft(selectedBlock.options.join(", "))}
                 />
               </label>
               <label className="col-span-2 space-y-1">
@@ -641,15 +671,19 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
                 <input
                   type="text"
                   className="workbench-input w-full font-mono"
-                  value={selectedBlock.labels.join(",")}
-                  onChange={(e) =>
-                    updateBlock({
-                      labels: e.target.value
-                        .split(",")
-                        .map((s) => s.trim())
-                        .filter(Boolean),
-                    })
-                  }
+                  value={labelsDraft}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    setLabelsDraft(raw);
+                    const parsed = raw
+                      .split(",")
+                      .map((s) => s.trim())
+                      .filter(Boolean);
+                    if (parsed.length > 0) {
+                      updateBlock({ labels: parsed });
+                    }
+                  }}
+                  onBlur={() => setLabelsDraft(selectedBlock.labels.join(", "))}
                 />
               </label>
 
