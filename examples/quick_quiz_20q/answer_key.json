@@ -1,0 +1,28 @@
+{
+  "exam_name": "QUICK QUIZ — 20 QUESTIONS",
+  "booklet_field": null,
+  "default_booklet": "A",
+  "booklets": {},
+  "answers": {
+    "q1": "A",
+    "q2": "B",
+    "q3": "C",
+    "q4": "D",
+    "q5": "A",
+    "q6": "B",
+    "q7": "C",
+    "q8": "D",
+    "q9": "A",
+    "q10": "B",
+    "q11": "C",
+    "q12": "D",
+    "q13": "A",
+    "q14": "B",
+    "q15": "C",
+    "q16": "D",
+    "q17": "A",
+    "q18": "B",
+    "q19": "C",
+    "q20": "D"
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "version": "2.0",
+  "name": "turkish_exam_50q_legacy",
+  "description": "Real-world Turkish 50-question optical answer sheet with concentric corner markers (6-digit Exam Code, 11-digit TC Kimlik No, 50 MCQ A-E).",
+  "page_width": 2134,
+  "page_height": 1999,
+  "registration": {
+    "mode": "markers",
+    "marker_path": "omr_marker.jpg",
+    "sheet_to_marker_width_ratio": 17.0,
+    "min_match_score": 0.3,
+    "max_match_variation": 0.45,
+    "scale_range": [0.35, 1.15],
+    "scale_steps": 16,
+    "split_ratio_x": 0.5,
+    "split_ratio_y": 0.35,
+    "erode_subtract": true,
+    "auto_rotate": true
+  },
+  "detection": {
+    "fill_threshold": 0.25,
+    "blank_floor": 0.14,
+    "min_separation": 0.08,
+    "review_confidence_threshold": 0.72,
+    "normalize_illumination": true
+  },
+  "blocks": [
+    {
+      "name": "SINAV_KODU_BLOCK",
+      "field_type": "grid_digits",
+      "direction": "vertical",
+      "origin": [93, 290],
+      "origin_mode": "top_left",
+      "bubble_radius": 23,
+      "bubbles_gap": 62,
+      "labels_gap": 57,
+      "options": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
+      "labels": ["sinavkodu_1..6"],
+      "group_as": "SINAV_KODU",
+      "validator": "digits"
+    },
+    {
+      "name": "TC_KIMLIK_BLOCK",
+      "field_type": "grid_digits",
+      "direction": "vertical",
+      "origin": [550, 295],
+      "origin_mode": "top_left",
+      "bubble_radius": 23,
+      "bubbles_gap": 62,
+      "labels_gap": 58,
+      "options": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
+      "labels": ["tckimlik_1..11"],
+      "group_as": "TC_KIMLIK_NO",
+      "validator": "digits"
+    },
+    {
+      "name": "MCQ_Q1_25",
+      "field_type": "mcq",
+      "direction": "horizontal",
+      "origin": [1375, 233],
+      "origin_mode": "top_left",
+      "bubble_radius": 23,
+      "bubbles_gap": 57,
+      "labels_gap": 62,
+      "options": ["A", "B", "C", "D", "E"],
+      "labels": ["q1..25"]
+    },
+    {
+      "name": "MCQ_Q26_50",
+      "field_type": "mcq",
+      "direction": "horizontal",
+      "origin": [1743, 233],
+      "origin_mode": "top_left",
+      "bubble_radius": 23,
+      "bubbles_gap": 57,
+      "labels_gap": 62,
+      "options": ["A", "B", "C", "D", "E"],
+      "labels": ["q26..50"]
+    }
+  ]
+}

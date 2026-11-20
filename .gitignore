@@ -1,8 +1,55 @@
-# Any directory starting with a dot
-**/\.*/
-# Except .github
-!.github/
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Everything in inputs/ and outputs/
-inputs/*
-outputs/*
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Testing & tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Frontend (Web Studio)
+studio/node_modules/
+studio/dist/
+studio/.vite/
+*.tsbuildinfo
+
+# Local runtime outputs & temporary files
+outputs/
+*.log
+.DS_Store
+Thumbs.db
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

@@ -1,0 +1,189 @@
+{
+  "version": "2.0",
+  "name": "standard_mcq_40",
+  "description": "STANDARD EXAM — 40 QUESTIONS",
+  "page_width": 1654,
+  "page_height": 2339,
+  "registration": {
+    "mode": "aruco",
+    "aruco_dict": "DICT_4X4_50",
+    "aruco_ids": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "target_corners": [
+      [
+        106.3,
+        106.3
+      ],
+      [
+        1547.24,
+        106.3
+      ],
+      [
+        1547.24,
+        2232.28
+      ],
+      [
+        106.3,
+        2232.28
+      ]
+    ],
+    "marker_path": null,
+    "sheet_to_marker_width_ratio": 17.0,
+    "min_match_score": 0.3,
+    "max_match_variation": 0.45,
+    "scale_range": [
+      0.35,
+      1.15
+    ],
+    "scale_steps": 16,
+    "split_ratio_x": 0.5,
+    "split_ratio_y": 0.5,
+    "erode_subtract": true,
+    "auto_rotate": true,
+    "min_area_ratio": 0.18,
+    "morph_kernel": [
+      9,
+      9
+    ],
+    "reference_path": null,
+    "max_features": 1500,
+    "good_match_ratio": 0.2
+  },
+  "detection": {
+    "fill_threshold": 0.26,
+    "blank_floor": 0.14,
+    "min_separation": 0.09,
+    "review_confidence_threshold": 0.72,
+    "inner_radius_ratio": 0.7,
+    "ring_inner_ratio": 1.12,
+    "ring_outer_ratio": 1.48,
+    "fill_delta": 22.0,
+    "ink_delta": 36.0,
+    "multi_mark_ratio": 0.7,
+    "normalize_illumination": true
+  },
+  "blocks": [
+    {
+      "name": "ID_STUDENT_ID",
+      "field_type": "grid_digits",
+      "direction": "vertical",
+      "origin": [
+        181.1,
+        385.83
+      ],
+      "origin_mode": "center",
+      "bubble_radius": 15.75,
+      "bubbles_gap": 42.52,
+      "labels_gap": 44.09,
+      "options": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9"
+      ],
+      "labels": [
+        "student_id_1..8"
+      ],
+      "allow_multiple": false,
+      "empty_value": "",
+      "group_as": "STUDENT_ID",
+      "validator": "digits"
+    },
+    {
+      "name": "BOOKLET_BLOCK",
+      "field_type": "custom",
+      "direction": "horizontal",
+      "origin": [
+        1283.07,
+        401.57
+      ],
+      "origin_mode": "center",
+      "bubble_radius": 17.32,
+      "bubbles_gap": 56.69,
+      "labels_gap": 55.12,
+      "options": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ],
+      "labels": [
+        "BOOKLET"
+      ],
+      "allow_multiple": false,
+      "empty_value": "",
+      "group_as": null,
+      "validator": null
+    },
+    {
+      "name": "MCQ_COL_1",
+      "field_type": "mcq",
+      "direction": "horizontal",
+      "origin": [
+        220.47,
+        961.65
+      ],
+      "origin_mode": "center",
+      "bubble_radius": 16.93,
+      "bubbles_gap": 53.54,
+      "labels_gap": 48.82,
+      "options": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E"
+      ],
+      "labels": [
+        "q1..20"
+      ],
+      "allow_multiple": false,
+      "empty_value": "",
+      "group_as": null,
+      "validator": null
+    },
+    {
+      "name": "MCQ_COL_2",
+      "field_type": "mcq",
+      "direction": "horizontal",
+      "origin": [
+        923.23,
+        961.65
+      ],
+      "origin_mode": "center",
+      "bubble_radius": 16.93,
+      "bubbles_gap": 53.54,
+      "labels_gap": 48.82,
+      "options": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E"
+      ],
+      "labels": [
+        "q21..40"
+      ],
+      "allow_multiple": false,
+      "empty_value": "",
+      "group_as": null,
+      "validator": null
+    }
+  ],
+  "metadata": {
+    "generated_by": "omrkit.SheetGenerator",
+    "page_format": "A4",
+    "dpi": 200,
+    "num_questions": 40
+  }
+}
