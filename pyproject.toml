@@ -76,6 +76,7 @@ dev = [
 
 [project.urls]
 Homepage = "https://github.com/duhanguler/omr"
+"Live Demo" = "https://omrkit-studio.onrender.com/"
 Repository = "https://github.com/duhanguler/omr"
 Documentation = "https://github.com/duhanguler/omr#readme"
 Changelog = "https://github.com/duhanguler/omr/blob/main/CHANGELOG.md"

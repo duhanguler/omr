@@ -1,13 +1,13 @@
 ---
 title: OMRKit Studio
 emoji: 🎯
-colorFrom: slate
+colorFrom: gray
 colorTo: green
 sdk: docker
 app_port: 7860
 pinned: false
 license: mit
-short_description: Zero-calibration OMR scanner, ArUco sheet generator & exam analytics
+short_description: Zero-calibration OMR scanner, sheet generator & analytics
 ---
 
 # OMRKit Studio — Interactive Live Demo
