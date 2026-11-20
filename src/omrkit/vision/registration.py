@@ -440,7 +440,11 @@ def _register_homography(image_bgr: np.ndarray, template: Template) -> Registrat
     if matrix is None:
         raise RegistrationError("RANSAC homography estimation failed.")
 
-    inlier_ratio = float(np.mean(mask)) if mask is not None and mask.size > 0 else 0.5
+    inlier_ratio = (
+        float(np.mean(np.asarray(mask, dtype=np.float32)))
+        if mask is not None and mask.size > 0
+        else 0.5
+    )
     warped = cv2.warpPerspective(
         image_bgr,
         matrix,
