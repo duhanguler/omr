@@ -174,9 +174,10 @@ class OMRScanner:
         self,
         data: bytes,
         filename: str,
+        max_pages: int | None = None,
     ) -> list[tuple[SheetResult, np.ndarray | None]]:
         """Scan an uploaded image or multi-page PDF byte buffer."""
-        pages = load_bytes(data, filename=filename, dpi=self.dpi)
+        pages = load_bytes(data, filename=filename, dpi=self.dpi, max_pages=max_pages)
         return [self.scan_page(page) for page in pages]
 
     def scan_file(

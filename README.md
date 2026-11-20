@@ -4,12 +4,13 @@
 
 **Zero-calibration Optical Mark Recognition engine with QR auto-template detection, blank-form auto-grid finder, live browser camera scanner, printable ArUco sheet generator, Classical Test Theory psychometrics, FastAPI REST API, and React Web Studio.**
 
+[![CI](https://github.com/duhanguler/omr/actions/workflows/ci.yml/badge.svg)](https://github.com/duhanguler/omr/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/duhanguler/omr?style=flat-square&color=1D4ED8)](https://github.com/duhanguler/omr/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-0F8A5F.svg?style=flat-square)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-14181F.svg?style=flat-square)](pyproject.toml)
-[![FastAPI + React Studio](https://img.shields.io/badge/Studio-FastAPI_%2B_React_19-1D4ED8.svg?style=flat-square)](#web-studio--rest-api)
-[![Code style: ruff](https://img.shields.io/badge/Lint-Ruff_%2B_Mypy-525B68.svg?style=flat-square)](pyproject.toml)
+[![Docker GHCR](https://img.shields.io/badge/Docker-ghcr.io%2Fduhanguler%2Fomr-2496ED.svg?style=flat-square)](https://github.com/duhanguler/omr/pkgs/container/omr)
 
-[English](README.md) · [Türkçe](README.tr.md) · [Examples](examples/) · [Contributing](CONTRIBUTING.md)
+[English](README.md) · [Türkçe](README.tr.md) · [Deployment & PyPI Guide](docs/DEPLOYMENT.md) · [Examples](examples/) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
@@ -39,12 +40,12 @@ Traditional open-source OMR scripts force you to hand-edit pixel coordinates in 
 <table>
   <tr>
     <td width="54%" align="center">
-      <img src="docs/assets/scan_overlay_demo.jpg" alt="OMRKit real-world phone scan verification overlay" />
+      <img src="https://raw.githubusercontent.com/duhanguler/omr/main/docs/assets/scan_overlay_demo.jpg" alt="OMRKit real-world phone scan verification overlay" />
       <br />
       <sub><b>Real mobile photo scan:</b> Emerald = confident (including ✓ & ✗ marks), Crimson = multi-marked, Amber = faint marks queued for 1-click HITL review.</sub>
     </td>
     <td width="46%" align="center">
-      <img src="docs/assets/generated_sheet_preview.jpg" alt="OMRKit generated ArUco + QR optical answer sheet" />
+      <img src="https://raw.githubusercontent.com/duhanguler/omr/main/docs/assets/generated_sheet_preview.jpg" alt="OMRKit generated ArUco + QR optical answer sheet" />
       <br />
       <sub><b>Zero-calibration generated PDF:</b> Vector A4/Letter layout with ArUco corners [0,1,2,3], embedded auto-detect QR badge, and exact companion <code>template.json</code>.</sub>
     </td>
@@ -55,15 +56,21 @@ Traditional open-source OMR scripts force you to hand-edit pixel coordinates in 
 
 ## Quickstart (60 Seconds)
 
-### 1. Install
+### 1. Run Instantly (Docker / One-Click Cloud Demo / Python)
 
 ```bash
+# Option A: Prebuilt official Docker image (zero build!)
+docker run -p 8000:8000 ghcr.io/duhanguler/omr:latest
+
+# Option B: Install from source (or `pip install "omrkit[all]"` once PyPI publishing is enabled)
 git clone https://github.com/duhanguler/omr.git
 cd omr
 pip install -e ".[all]"
 ```
 
-*(Or run via Docker with zero local setup: `docker compose up` → open `http://localhost:8000` and click **Try Demo**!)*
+**One-Click Free Cloud Live Demo:**
+- **Render Blueprint:** [![Deploy to Render](https://img.shields.io/badge/Deploy_to-Render-14181F?style=flat-square&logo=render)](https://dashboard.render.com/blueprint/new?repo=https://github.com/duhanguler/omr)
+- **HuggingFace Spaces (Docker + Auto-Sync):** See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the 2-minute free HTTPS setup (supports browser **Live Camera**!).
 
 ### 2. Generate a Print-Ready ArUco + QR Sheet
 

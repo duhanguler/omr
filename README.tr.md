@@ -58,19 +58,19 @@ omrkit scan examples/turkish_exam_50q/scans \
   -o outputs/turkish_demo
 ```
 
-### 3. Görsel Web Studio ve REST API’yi Başlat
+### 3. Görsel Web Studio, Canlı Demo & Docker
 
 ```bash
+# Yerelde Web Studio:
 omrkit studio
 # Web Studio:   http://127.0.0.1:8000
 # OpenAPI Docs: http://127.0.0.1:8000/docs
+
+# Sıfır derleme ile resmi GHCR Docker imajı:
+docker run -p 8000:8000 ghcr.io/duhanguler/omr:latest
 ```
 
-Docker ile tek komutta çalıştırmak için:
-
-```bash
-docker compose up
-```
+Ücretsiz canlı demo yayınlama (**HuggingFace Spaces** / **Render Tek Tık Blueprint**) ve **PyPI Trusted Publishing** adımları için [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) rehberine göz atabilirsiniz.
 
 ---
 

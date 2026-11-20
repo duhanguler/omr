@@ -7,8 +7,9 @@ import {
   Printer,
   ScanLine,
   Sparkles,
+  X,
 } from "lucide-react";
-import { fetchPresets, loadDemoCohort } from "./api/client";
+import { fetchHealth, fetchPresets, loadDemoCohort, type HealthResponse } from "./api/client";
 import type {
   AnswerKey,
   GradingPolicy,
@@ -35,8 +36,15 @@ export default function App() {
   const [scanResponse, setScanResponse] = useState<ScanResponse | null>(null);
   const [gradingReport, setGradingReport] = useState<GradingReport | null>(null);
   const [loadingDemo, setLoadingDemo] = useState(false);
+  const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
 
   useEffect(() => {
+    fetchHealth()
+      .then(setHealth)
+      .catch(() => {
+        // Ignore if static preview
+      });
     fetchPresets()
       .then((res) => {
         setPresets(res.sheet_presets);
@@ -199,6 +207,38 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {health?.demo_mode && !demoBannerDismissed && (
+        <div className="bg-[var(--surface-subtle)] border-b border-[var(--border-hairline)]">
+          <div className="max-w-[1440px] mx-auto px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex flex-wrap items-center gap-2 text-[var(--ink-secondary)]">
+              <span className="font-semibold text-[var(--ink-primary)]">Hosted Public Demo</span>
+              <span>
+                Upload images/PDFs (max {health.limits.max_upload_mb} MB,{" "}
+                {health.limits.max_files_per_scan} files) or explore instantly with a 5-student cohort.
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={loadingDemo}
+                onClick={() => void handleRunDemo()}
+                className="font-medium text-[var(--accent-cobalt)] hover:underline cursor-pointer"
+              >
+                Load 5-Student Demo →
+              </button>
+              <button
+                type="button"
+                aria-label="Dismiss demo notice"
+                onClick={() => setDemoBannerDismissed(true)}
+                className="text-[var(--ink-muted)] hover:text-[var(--ink-primary)] cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 py-5">
         {tab === "scan" && (
