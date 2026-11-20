@@ -15,6 +15,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from omrkit.api.settings import APISettings, get_api_settings
 from omrkit.core.auto_scanner import scan_bytes_auto
 from omrkit.core.benchmark import apply_camera_distortion, render_synthetic_filled_sheet
 from omrkit.core.migrator import migrate_legacy_template_dict
@@ -35,6 +36,21 @@ from omrkit.vision.grid_finder import detect_layout_from_blank
 from omrkit.vision.visualizer import render_annotated_sheet
 
 router = APIRouter(prefix="/api", tags=["omrkit"])
+
+
+async def _read_bounded_upload(upload: UploadFile, settings: APISettings) -> bytes:
+    """Read an uploaded file enforcing the configured byte limit cleanly."""
+    limit = settings.max_upload_bytes
+    data = await upload.read(limit + 1)
+    if len(data) > limit:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"File '{upload.filename or 'upload'}' exceeds maximum allowed upload size "
+                f"of {settings.max_upload_mb} MB."
+            ),
+        )
+    return data
 
 
 def _encode_image_data_url(image_bgr: np.ndarray, fmt: str = ".jpg", quality: int = 86) -> str:
@@ -90,9 +106,16 @@ class MigrateTemplateRequest(BaseModel):
 
 
 @router.get("/health")
-def health_check() -> dict[str, str]:
-    """Return service health and package version."""
-    return {"status": "ok", "service": "omrkit", "version": "2.1.0"}
+def health_check() -> dict[str, Any]:
+    """Return service health, package version, demo mode flag, and upload guardrails."""
+    settings = get_api_settings()
+    return {
+        "status": "ok",
+        "service": "omrkit",
+        "version": "2.1.0",
+        "demo_mode": settings.demo_mode,
+        "limits": settings.limits_dict(),
+    }
 
 
 @router.get("/presets")
@@ -190,10 +213,11 @@ async def auto_detect_template_layout(
     dpi: int = Form(200),
 ) -> dict[str, Any]:
     """Automatically detect circular bubble grids on an uploaded blank sheet image/PDF."""
-    data = await file.read()
+    settings = get_api_settings()
+    data = await _read_bounded_upload(file, settings)
     fname = file.filename or "blank_sheet.png"
     try:
-        page = load_bytes(data, filename=fname, dpi=dpi)[0]
+        page = load_bytes(data, filename=fname, dpi=dpi, max_pages=settings.max_pdf_pages)[0]
         template, bubbles_count = detect_layout_from_blank(
             page.image_bgr, template_name=fname.rsplit(".", 1)[0]
         )
@@ -225,9 +249,15 @@ async def preview_uploaded_document(
     dpi: int = Form(200),
 ) -> dict[str, Any]:
     """Decode any uploaded image or PDF first page for the Visual Template Designer canvas."""
-    data = await file.read()
+    settings = get_api_settings()
+    data = await _read_bounded_upload(file, settings)
     try:
-        pages = load_bytes(data, filename=file.filename or "upload.png", dpi=dpi)
+        pages = load_bytes(
+            data,
+            filename=file.filename or "upload.png",
+            dpi=dpi,
+            max_pages=settings.max_pdf_pages,
+        )
     except DocumentLoadError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -249,6 +279,16 @@ async def scan_uploaded_sheets(
     dpi: int = Form(200),
 ) -> dict[str, Any]:
     """Scan uploaded images/PDFs against a template JSON or 'auto' (QR auto-detection)."""
+    settings = get_api_settings()
+    if len(files) > settings.max_files_per_scan:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Too many files ({len(files)}); maximum allowed per request is "
+                f"{settings.max_files_per_scan}."
+            ),
+        )
+
     auto_mode = template_json.strip().lower() in {"", "auto"}
     scanner: OMRScanner | None = None
     template_name = "auto"
@@ -268,15 +308,26 @@ async def scan_uploaded_sheets(
     failed_count = 0
 
     for upload in files:
-        raw_bytes = await upload.read()
+        raw_bytes = await _read_bounded_upload(upload, settings)
         fname = upload.filename or "sheet.png"
         try:
             page_results = (
-                scan_bytes_auto(raw_bytes, filename=fname, dpi=dpi)
+                scan_bytes_auto(
+                    raw_bytes,
+                    filename=fname,
+                    dpi=dpi,
+                    max_pages=settings.max_pdf_pages,
+                )
                 if scanner is None
-                else scanner.scan_bytes(raw_bytes, filename=fname)
+                else scanner.scan_bytes(
+                    raw_bytes,
+                    filename=fname,
+                    max_pages=settings.max_pdf_pages,
+                )
             )
         except DocumentLoadError as exc:
+            if "exceeding the configured limit" in str(exc):
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
             failed_count += 1
             sheets.append(
                 SheetResult(

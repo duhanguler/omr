@@ -111,9 +111,10 @@ def scan_bytes_auto(
     filename: str,
     dpi: int = 200,
     extra_templates: dict[str, Template] | None = None,
+    max_pages: int | None = None,
 ) -> list[tuple[SheetResult, np.ndarray | None]]:
     """Auto-detect template per page and scan uploaded image or multi-page PDF bytes."""
-    pages = load_bytes(data, filename=filename, dpi=dpi)
+    pages = load_bytes(data, filename=filename, dpi=dpi, max_pages=max_pages)
     return [scan_page_auto(p, extra_templates=extra_templates) for p in pages]
 
 

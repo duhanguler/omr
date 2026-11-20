@@ -28,6 +28,23 @@ async function handleJson<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
 
+export interface HealthResponse {
+  status: string;
+  service: string;
+  version: string;
+  demo_mode: boolean;
+  limits: {
+    max_upload_mb: number;
+    max_files_per_scan: number;
+    max_pdf_pages: number;
+  };
+}
+
+export async function fetchHealth(): Promise<HealthResponse> {
+  const res = await fetch("/api/health");
+  return handleJson<HealthResponse>(res);
+}
+
 export async function fetchPresets(): Promise<PresetsResponse> {
   const res = await fetch("/api/presets");
   return handleJson<PresetsResponse>(res);

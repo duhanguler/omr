@@ -1,0 +1,49 @@
+name: Deploy Live Demo (HuggingFace Spaces)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync-hf-space:
+    name: Sync to HuggingFace Space
+    runs-on: ubuntu-latest
+    if: ${{ vars.HF_SPACE_REPO != '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify HF_TOKEN secret is configured
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::error::HF_SPACE_REPO is set, but HF_TOKEN secret is missing. Add a Write token from https://huggingface.co/settings/tokens."
+            exit 1
+          fi
+
+      - name: Prepare HuggingFace Space bundle
+        run: |
+          mkdir -p /tmp/hf-space
+          cp -r Dockerfile pyproject.toml LICENSE src studio /tmp/hf-space/
+          cp deploy/huggingface/README.md /tmp/hf-space/README.md
+          # Configure HuggingFace default app_port=7860 and demo guardrails
+          sed -i 's/PORT=8000/PORT=7860/' /tmp/hf-space/Dockerfile
+          sed -i 's/OMRKIT_DEMO_MODE=false/OMRKIT_DEMO_MODE=true/' /tmp/hf-space/Dockerfile
+
+      - name: Push bundle to HuggingFace Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE_REPO: ${{ vars.HF_SPACE_REPO }}
+        run: |
+          cd /tmp/hf-space
+          git init -b main
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "chore: sync OMRKit Studio live demo from ${{ github.sha }}"
+          git push --force "https://oauth2:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE_REPO}" main

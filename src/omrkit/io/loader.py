@@ -45,11 +45,17 @@ def _render_pdf_document(
     pdf_doc: pdfium.PdfDocument,
     source_name: str,
     dpi: int = 200,
+    max_pages: int | None = None,
 ) -> list[LoadedPage]:
     scale = dpi / 72.0
     pages: list[LoadedPage] = []
     try:
-        for idx in range(len(pdf_doc)):
+        page_count = len(pdf_doc)
+        if max_pages is not None and page_count > max_pages:
+            raise DocumentLoadError(
+                f"PDF '{source_name}' has {page_count} pages, exceeding the configured limit of {max_pages}."
+            )
+        for idx in range(page_count):
             page = pdf_doc[idx]
             try:
                 bitmap = page.render(scale=scale)
@@ -72,7 +78,11 @@ def _render_pdf_document(
     return pages
 
 
-def load_document(source: str | Path, dpi: int = 200) -> list[LoadedPage]:
+def load_document(
+    source: str | Path,
+    dpi: int = 200,
+    max_pages: int | None = None,
+) -> list[LoadedPage]:
     """Load an image file or multi-page PDF into a list of EXIF-oriented BGR pages."""
     path = Path(source)
     if not path.exists():
@@ -90,7 +100,11 @@ def load_document(source: str | Path, dpi: int = 200) -> list[LoadedPage]:
     if ext in PDF_EXTENSIONS:
         try:
             pdf_doc = pdfium.PdfDocument(str(path))
-            return _render_pdf_document(pdf_doc, source_name=path.name, dpi=dpi)
+            return _render_pdf_document(
+                pdf_doc, source_name=path.name, dpi=dpi, max_pages=max_pages
+            )
+        except DocumentLoadError:
+            raise
         except Exception as exc:
             raise DocumentLoadError(f"Failed to decode PDF '{path.name}': {exc}") from exc
 
@@ -112,7 +126,12 @@ def load_document(source: str | Path, dpi: int = 200) -> list[LoadedPage]:
     ]
 
 
-def load_bytes(data: bytes, filename: str, dpi: int = 200) -> list[LoadedPage]:
+def load_bytes(
+    data: bytes,
+    filename: str,
+    dpi: int = 200,
+    max_pages: int | None = None,
+) -> list[LoadedPage]:
     """Decode uploaded image or PDF bytes directly in memory."""
     ext = Path(filename).suffix.lower()
     if ext not in SUPPORTED_EXTENSIONS:
@@ -124,7 +143,9 @@ def load_bytes(data: bytes, filename: str, dpi: int = 200) -> list[LoadedPage]:
     if ext in PDF_EXTENSIONS:
         try:
             pdf_doc = pdfium.PdfDocument(data)
-            return _render_pdf_document(pdf_doc, source_name=filename, dpi=dpi)
+            return _render_pdf_document(pdf_doc, source_name=filename, dpi=dpi, max_pages=max_pages)
+        except DocumentLoadError:
+            raise
         except Exception as exc:
             raise DocumentLoadError(f"Failed to decode PDF '{filename}': {exc}") from exc
 

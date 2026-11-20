@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: omrkit-studio
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: OMRKIT_DEMO_MODE
+        value: "true"
+      - key: OMRKIT_MAX_UPLOAD_MB
+        value: "15"
+      - key: OMRKIT_MAX_FILES_PER_SCAN
+        value: "20"
+      - key: OMRKIT_MAX_PDF_PAGES
+        value: "25"

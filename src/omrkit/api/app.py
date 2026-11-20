@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -36,6 +37,21 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.middleware("http")
+    async def add_security_headers(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        # Allow self-hosted camera access for Live Browser Camera Scanner on HTTPS demos
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "camera=(self), microphone=(), geolocation=()",
+        )
+        return response
+
     app.include_router(router)
 
     assets_dir = STATIC_DIR / "assets"
@@ -50,7 +66,7 @@ def create_app() -> FastAPI:
             return FileResponse(index_html)
         return HTMLResponse(
             "<html><body style='font-family:sans-serif;padding:2rem;'>"
-            "<h1>OMRKit v2.0 API is running</h1>"
+            "<h1>OMRKit v2.1 API is running</h1>"
             "<p>Interactive API docs: <a href='/docs'>/docs</a></p>"
             "<p>Build the Web Studio frontend via <code>cd studio && npm run build</code>.</p>"
             "</body></html>"
