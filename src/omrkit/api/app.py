@@ -23,7 +23,7 @@ def create_app() -> FastAPI:
             "confidence-scored bubble detection, printable PDF sheet generation, "
             "and Classical Test Theory exam psychometrics."
         ),
-        version="2.0.0",
+        version="2.1.0",
         docs_url="/docs",
         redoc_url="/redoc",
     )

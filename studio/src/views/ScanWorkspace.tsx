@@ -35,6 +35,7 @@ export function ScanWorkspace({
   onProceedToGrading,
 }: ScanWorkspaceProps) {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [autoDetectQr, setAutoDetectQr] = useState<boolean>(false);
   const [activeSheetId, setActiveSheetId] = useState<string | null>(null);
   const [inspectorTab, setInspectorTab] = useState<"review" | "all">("review");
   const [zoom, setZoom] = useState<number>(100);
@@ -51,8 +52,8 @@ export function ScanWorkspace({
   const currentOverlay = currentSheet ? scanResponse?.overlays[currentSheet.sheet_id] : undefined;
 
   async function handleRunScan() {
-    if (!activeTemplate) {
-      setError("Please select or upload a template first.");
+    if (!autoDetectQr && !activeTemplate) {
+      setError("Please select a template or enable QR Auto-Detect.");
       return;
     }
     if (selectedFiles.length === 0) {
@@ -62,7 +63,7 @@ export function ScanWorkspace({
     setLoading(true);
     setError(null);
     try {
-      const response = await scanFiles(selectedFiles, activeTemplate);
+      const response = await scanFiles(selectedFiles, autoDetectQr ? "auto" : activeTemplate!);
       onScanComplete(response);
       if (response.sheets.length > 0) {
         setActiveSheetId(response.sheets[0].sheet_id);
@@ -79,6 +80,7 @@ export function ScanWorkspace({
     try {
       const text = await file.text();
       const parsed = JSON.parse(text) as Template;
+      setAutoDetectQr(false);
       onSelectTemplate(parsed);
       setError(null);
     } catch (err) {
@@ -129,12 +131,24 @@ export function ScanWorkspace({
           <select
             id="scan-template-select"
             className="workbench-input w-full"
-            value={presets.some((p) => p.template.name === activeTemplate?.name) ? activeTemplate?.name ?? "" : "__custom__"}
+            value={
+              autoDetectQr
+                ? "__auto__"
+                : presets.some((p) => p.template.name === activeTemplate?.name)
+                  ? activeTemplate?.name ?? ""
+                  : "__custom__"
+            }
             onChange={(e) => {
+              if (e.target.value === "__auto__") {
+                setAutoDetectQr(true);
+                return;
+              }
+              setAutoDetectQr(false);
               const found = presets.find((p) => p.template.name === e.target.value);
               if (found) onSelectTemplate(found.template);
             }}
           >
+            <option value="__auto__">Auto-Detect via Sheet QR Code</option>
             {presets.map((p) => (
               <option key={p.id} value={p.template.name}>
                 {p.spec.title} ({p.spec.num_questions}Q)

@@ -1,26 +1,30 @@
 import { useEffect, useState } from "react";
 import {
   BarChart3,
+  Camera,
   ExternalLink,
   Grid,
   Printer,
   ScanLine,
+  Sparkles,
 } from "lucide-react";
-import { fetchPresets } from "./api/client";
+import { fetchPresets, loadDemoCohort } from "./api/client";
 import type {
   AnswerKey,
   GradingPolicy,
   GradingReport,
   PresetBundle,
   ScanResponse,
+  SheetResult,
   Template,
 } from "./types";
 import { AnalyticsView } from "./views/AnalyticsView";
+import { CameraScanner } from "./views/CameraScanner";
 import { ScanWorkspace } from "./views/ScanWorkspace";
 import { SheetGenerator } from "./views/SheetGenerator";
 import { TemplateDesigner } from "./views/TemplateDesigner";
 
-type ActiveTab = "scan" | "designer" | "generator" | "analytics";
+type ActiveTab = "scan" | "camera" | "designer" | "generator" | "analytics";
 
 export default function App() {
   const [tab, setTab] = useState<ActiveTab>("scan");
@@ -30,6 +34,7 @@ export default function App() {
   const [activeAnswerKey, setActiveAnswerKey] = useState<AnswerKey | null>(null);
   const [scanResponse, setScanResponse] = useState<ScanResponse | null>(null);
   const [gradingReport, setGradingReport] = useState<GradingReport | null>(null);
+  const [loadingDemo, setLoadingDemo] = useState(false);
 
   useEffect(() => {
     fetchPresets()
@@ -47,6 +52,39 @@ export default function App() {
         // API may not be reachable during static preview
       });
   }, []);
+
+  async function handleRunDemo() {
+    setLoadingDemo(true);
+    try {
+      const demo = await loadDemoCohort("quick_quiz_20");
+      setActiveTemplate(demo.template);
+      setActiveAnswerKey(demo.answer_key);
+      setScanResponse(demo.scan_response);
+      setGradingReport(demo.grading_report);
+      setTab("scan");
+    } finally {
+      setLoadingDemo(false);
+    }
+  }
+
+  function handleCameraCapture(sheet: SheetResult, overlayUrl?: string) {
+    setScanResponse((prev) => {
+      const prevSheets = prev?.sheets ?? [];
+      const prevOverlays = prev?.overlays ?? {};
+      const nextSheets = [sheet, ...prevSheets];
+      const nextOverlays = overlayUrl ? { ...prevOverlays, [sheet.sheet_id]: overlayUrl } : prevOverlays;
+      return {
+        template_name: sheet.template_name,
+        total_sheets: nextSheets.length,
+        flagged_sheets: nextSheets.filter((s) => s.review_items.length > 0).length,
+        failed_sheets: nextSheets.filter((s) => s.error !== null).length,
+        total_elapsed_ms: (prev?.total_elapsed_ms ?? 0) + sheet.elapsed_ms,
+        sheets: nextSheets,
+        overlays: nextOverlays,
+      };
+    });
+    setGradingReport(null);
+  }
 
   function handleApplyOverride(sheetId: string, fieldId: string, value: string) {
     setScanResponse((prev) => {
@@ -86,6 +124,7 @@ export default function App() {
 
   const navItems: { id: ActiveTab; label: string; icon: typeof ScanLine; badge?: number }[] = [
     { id: "scan", label: "Scan & Review", icon: ScanLine, badge: totalFlags > 0 ? totalFlags : undefined },
+    { id: "camera", label: "Live Camera", icon: Camera },
     { id: "designer", label: "Template Designer", icon: Grid },
     { id: "generator", label: "Sheet Generator", icon: Printer },
     { id: "analytics", label: "Grading & Analytics", icon: BarChart3 },
@@ -94,7 +133,7 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col">
       <header className="sticky top-0 z-20 bg-[var(--surface-card)]/95 backdrop-blur border-b border-[var(--border-hairline)]">
-        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 shrink-0">
             <svg width="26" height="26" viewBox="0 0 28 28" fill="none" aria-hidden="true">
               <rect x="2" y="2" width="24" height="24" rx="6" fill="#14181F" />
@@ -105,7 +144,7 @@ export default function App() {
               <h1 className="text-sm font-bold tracking-tight text-[var(--ink-primary)]">
                 OMRKit Studio
               </h1>
-              <p className="text-[11px] font-mono text-[var(--ink-muted)]">v2.0 · Optical Workbench</p>
+              <p className="text-[11px] font-mono text-[var(--ink-muted)]">v2.1 · Optical Workbench</p>
             </div>
           </div>
 
@@ -137,14 +176,27 @@ export default function App() {
             })}
           </nav>
 
-          <a
-            href="/docs"
-            target="_blank"
-            rel="noreferrer"
-            className="hidden md:inline-flex items-center gap-1 text-xs font-mono text-[var(--ink-secondary)] hover:text-[var(--ink-primary)] shrink-0"
-          >
-            REST API <ExternalLink className="w-3 h-3" />
-          </a>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              id="try-demo-btn"
+              type="button"
+              disabled={loadingDemo}
+              onClick={() => void handleRunDemo()}
+              className="btn-secondary !py-1.5 !px-2.5 text-xs"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-[var(--signal-ok)]" />
+              <span>{loadingDemo ? "Loading..." : "Try Demo"}</span>
+            </button>
+
+            <a
+              href="/docs"
+              target="_blank"
+              rel="noreferrer"
+              className="hidden xl:inline-flex items-center gap-1 text-xs font-mono text-[var(--ink-secondary)] hover:text-[var(--ink-primary)]"
+            >
+              API <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
         </div>
       </header>
 
@@ -165,6 +217,14 @@ export default function App() {
             }}
             onApplyOverride={handleApplyOverride}
             onProceedToGrading={() => setTab("analytics")}
+          />
+        )}
+
+        {tab === "camera" && (
+          <CameraScanner
+            activeTemplate={activeTemplate}
+            onSheetCaptured={handleCameraCapture}
+            onGoToReview={() => setTab("scan")}
           />
         )}
 

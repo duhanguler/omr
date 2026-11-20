@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 from pathlib import Path
+from time import perf_counter
 from typing import Annotated
 
 import typer
@@ -12,20 +14,23 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
+from omrkit.core.auto_scanner import scan_file_auto
 from omrkit.core.benchmark import run_benchmark
+from omrkit.core.migrator import migrate_legacy_template_file
 from omrkit.core.scanner import OMRScanner
 from omrkit.generator.pdf_sheet import SheetGenerator
 from omrkit.generator.presets import get_sheet_preset, get_sheet_presets
 from omrkit.grading.grader import ExamGrader
 from omrkit.io.exporters import export_csv, export_excel, export_json, export_pdf_scorecard
-from omrkit.io.loader import discover_documents, strip_exif_and_save
+from omrkit.io.loader import discover_documents, load_document, strip_exif_and_save
 from omrkit.models.grading import AnswerKey, GradingPolicy
-from omrkit.models.scan import SheetResult
+from omrkit.models.scan import BatchResult, SheetResult
 from omrkit.models.template import Template
+from omrkit.vision.grid_finder import detect_layout_from_blank
 
 app = typer.Typer(
     name="omrkit",
-    help="OMRKit v2.0 — Modern Optical Mark Recognition engine, Sheet Generator, Psychometrics & Web Studio.",
+    help="OMRKit v2.1 — Modern Optical Mark Recognition engine, QR Auto-Scan, Sheet Generator, Psychometrics & Web Studio.",
     no_args_is_help=True,
     rich_markup_mode="rich",
 )
@@ -39,9 +44,13 @@ def scan(
         typer.Argument(help="Image file, PDF file, or directory containing sheets to scan."),
     ],
     template: Annotated[
-        Path,
-        typer.Option("-t", "--template", help="Path to template.json or template.yaml."),
-    ],
+        Path | None,
+        typer.Option(
+            "-t",
+            "--template",
+            help="Path to template.json/.yaml. Omit to auto-detect template from embedded sheet QR code.",
+        ),
+    ] = None,
     output: Annotated[
         Path,
         typer.Option(
@@ -79,31 +88,58 @@ def scan(
         typer.Option("-r", "--recursive", help="Recursively scan subdirectories."),
     ] = False,
 ) -> None:
-    """Scan optical sheets (images or multi-page PDFs) and export structured results."""
-    tmpl = Template.from_file(template)
-    scanner = OMRScanner(tmpl, dpi=dpi)
+    """Scan optical sheets (images or multi-page PDFs) with explicit template or QR auto-detection."""
     output.mkdir(parents=True, exist_ok=True)
     overlay_dir = output / "overlays" if overlay else None
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[bold cyan]{task.description}"),
-        BarColumn(),
-        TextColumn("{task.completed}/{task.total}"),
-        TimeElapsedColumn(),
-        console=console,
-    ) as progress:
-        task_id = progress.add_task("Scanning sheets...", total=None)
+    if template is not None:
+        tmpl = Template.from_file(template)
+        tmpl_label = tmpl.name
+        scanner = OMRScanner(tmpl, dpi=dpi)
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold cyan]{task.description}"),
+            BarColumn(),
+            TextColumn("{task.completed}/{task.total}"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task_id = progress.add_task("Scanning sheets...", total=None)
 
-        def _on_progress(done: int, total: int, filename: str) -> None:
-            progress.update(task_id, total=total, completed=done, description=f"Scanned {filename}")
+            def _on_progress(done: int, total: int, filename: str) -> None:
+                progress.update(
+                    task_id, total=total, completed=done, description=f"Scanned {filename}"
+                )
 
-        batch = scanner.scan_batch(
-            input_path=input_path,
-            workers=workers,
-            recursive=recursive,
-            save_overlay_dir=overlay_dir,
-            progress_cb=_on_progress,
+            batch = scanner.scan_batch(
+                input_path=input_path,
+                workers=workers,
+                recursive=recursive,
+                save_overlay_dir=overlay_dir,
+                progress_cb=_on_progress,
+            )
+    else:
+        tmpl_label = "auto (QR)"
+        files = discover_documents(input_path, recursive=recursive)
+        t0 = perf_counter()
+        all_sheets: list[SheetResult] = []
+        for f in files:
+            all_sheets.extend(scan_file_auto(f, dpi=dpi, save_overlay_dir=overlay_dir))
+        elapsed = (perf_counter() - t0) * 1000.0
+        succeeded = sum(1 for r in all_sheets if r.error is None)
+        failed = sum(1 for r in all_sheets if r.error is not None)
+        flagged = sum(1 for r in all_sheets if r.error is None and len(r.review_items) > 0)
+        batch = BatchResult(
+            template_name="auto",
+            sheets=all_sheets,
+            total_sheets=len(all_sheets),
+            succeeded=succeeded,
+            flagged_sheets=flagged,
+            failed_sheets=failed,
+            total_elapsed_ms=round(elapsed, 2),
+            sheets_per_minute=round(
+                (len(all_sheets) / (elapsed / 60000.0)) if elapsed > 0 else 0.0, 1
+            ),
         )
 
     report = None
@@ -131,7 +167,7 @@ def scan(
     table = Table(title="OMRKit Scan Summary", show_header=False)
     table.add_column("Metric", style="cyan", no_wrap=True)
     table.add_column("Value", style="bold")
-    table.add_row("Template", tmpl.name)
+    table.add_row("Template", tmpl_label)
     table.add_row("Total Pages", str(batch.total_sheets))
     table.add_row("Succeeded", f"[green]{batch.succeeded}[/green]")
     table.add_row("Flagged for HITL Review", f"[yellow]{batch.flagged_sheets}[/yellow]")
@@ -175,7 +211,7 @@ def generate(
         typer.Option("--list", help="List available built-in optical sheet presets."),
     ] = False,
 ) -> None:
-    """Generate a print-ready ArUco PDF optical sheet + pixel-exact matching template.json."""
+    """Generate a print-ready ArUco + QR PDF optical sheet + pixel-exact matching template.json."""
     if list_presets:
         table = Table(title="Built-in Optical Sheet Presets")
         table.add_column("Preset ID", style="cyan")
@@ -197,6 +233,53 @@ def generate(
     console.print(f"[green]Generated optical sheet bundle in '{output}':[/green]")
     for key, p in paths.items():
         console.print(f"  - [bold]{key}[/bold]: {p}")
+
+
+@app.command("detect-layout")
+def detect_layout(
+    blank_sheet: Annotated[
+        Path,
+        typer.Argument(help="Path to a blank optical form image or PDF."),
+    ],
+    output: Annotated[
+        Path,
+        typer.Option("-o", "--output", help="Output path for auto-detected template.json."),
+    ] = Path("detected_template.json"),
+    name: Annotated[
+        str | None,
+        typer.Option("--name", help="Optional name for the generated template."),
+    ] = None,
+    dpi: Annotated[int, typer.Option("--dpi", help="PDF rasterization DPI.")] = 200,
+) -> None:
+    """Automatically detect circular bubble grids on a blank optical form and emit template.json."""
+    page = load_document(blank_sheet, dpi=dpi)[0]
+    tmpl, bubbles_found = detect_layout_from_blank(
+        page.image_bgr, template_name=name or blank_sheet.stem
+    )
+    saved = tmpl.to_file(output)
+    console.print(
+        f"[green]Auto-detected {len(tmpl.blocks)} block(s) ({len(tmpl.all_field_ids())} fields, "
+        f"{bubbles_found} bubbles)[/green] -> [bold]{saved}[/bold]"
+    )
+
+
+@app.command("migrate-template")
+def migrate_template(
+    legacy_json: Annotated[
+        Path,
+        typer.Argument(help="Path to a legacy OMRChecker v1 template.json file."),
+    ],
+    output: Annotated[
+        Path,
+        typer.Option("-o", "--output", help="Destination path for OMRKit v2 template.json."),
+    ] = Path("template_v2.json"),
+) -> None:
+    """Migrate a legacy OMRChecker template.json into an OMRKit v2.0 template."""
+    tmpl = migrate_legacy_template_file(legacy_json, output)
+    console.print(
+        f"[green]Migrated legacy template[/green] '{legacy_json.name}' -> [bold]{output}[/bold] "
+        f"({len(tmpl.blocks)} blocks, {len(tmpl.all_field_ids())} fields, mode={tmpl.registration.mode})"
+    )
 
 
 @app.command()
@@ -324,7 +407,10 @@ def strip_exif(
 @app.command()
 def studio(
     host: Annotated[str, typer.Option("--host", help="Bind host address.")] = "127.0.0.1",
-    port: Annotated[int, typer.Option("--port", help="HTTP port.")] = 8000,
+    port: Annotated[
+        int | None,
+        typer.Option("--port", help="HTTP port (defaults to $PORT or 8000)."),
+    ] = None,
     reload: Annotated[
         bool, typer.Option("--reload", help="Enable auto-reload for development.")
     ] = False,
@@ -339,8 +425,16 @@ def studio(
         )
         raise typer.Exit(code=1) from exc
 
+    resolved_port = port if port is not None else int(os.environ.get("PORT", "8000"))
     console.print(
         f"[bold green]OMRKit Studio[/bold green] listening on "
-        f"[cyan]http://{host}:{port}[/cyan] (OpenAPI docs: [cyan]http://{host}:{port}/docs[/cyan])"
+        f"[cyan]http://{host}:{resolved_port}[/cyan] "
+        f"(OpenAPI docs: [cyan]http://{host}:{resolved_port}/docs[/cyan])"
     )
-    uvicorn.run("omrkit.api.app:create_app", factory=True, host=host, port=port, reload=reload)
+    uvicorn.run(
+        "omrkit.api.app:create_app",
+        factory=True,
+        host=host,
+        port=resolved_port,
+        reload=reload,
+    )

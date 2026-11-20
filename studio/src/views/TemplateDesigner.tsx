@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, Download, Plus, Trash2, Upload } from "lucide-react";
+import { Check, Download, FileCode2, Plus, Trash2, Upload, Wand2 } from "lucide-react";
 import {
+  autoDetectTemplateLayout,
+  migrateLegacyTemplate,
   previewUploadedDocument,
   triggerBlobDownload,
   validateTemplate,
@@ -75,9 +77,12 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
   const [dragRect, setDragRect] = useState<DragRect | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [detecting, setDetecting] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const autoDetectRef = useRef<HTMLInputElement>(null);
+  const legacyRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (activeTemplate) setTemplate(activeTemplate);
@@ -271,6 +276,37 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
     }
   }
 
+  async function handleAutoDetectGrids(file: File) {
+    setErrorMsg(null);
+    setDetecting(true);
+    try {
+      const res = await autoDetectTemplateLayout(file);
+      setBgImageUrl(res.image_data_url);
+      setTemplate(res.template);
+      setSelectedIdx(0);
+      setStatusMsg(
+        `Auto-detected ${res.blocks_count} bubble grids (${res.fields_count} fields, ${res.detected_bubbles} bubbles)!`
+      );
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Auto-detect failed.");
+    } finally {
+      setDetecting(false);
+    }
+  }
+
+  async function handleMigrateLegacy(file: File) {
+    setErrorMsg(null);
+    try {
+      const legacy = JSON.parse(await file.text()) as Record<string, unknown>;
+      const res = await migrateLegacyTemplate(legacy, file.name.replace(/\.json$/i, ""));
+      setTemplate(res.template);
+      setSelectedIdx(0);
+      setStatusMsg(`Migrated legacy OMRChecker template '${file.name}' to OMRKit v2.0!`);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Migration failed.");
+    }
+  }
+
   function updateBlock(patch: Partial<FieldBlock>) {
     setTemplate((prev) => ({
       ...prev,
@@ -301,20 +337,38 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
       {/* Left Interactive Canvas */}
       <section className="lg:col-span-8 paper-card overflow-hidden">
-        <div className="px-4 py-3 border-b border-[var(--border-hairline)] flex flex-wrap items-center justify-between gap-3">
+        <div className="px-4 py-3 border-b border-[var(--border-hairline)] flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-sm font-semibold">Interactive Visual Template Designer</h2>
             <p className="text-xs text-[var(--ink-muted)]">
-              Upload any blank sheet image/PDF, then click and drag on the canvas to place a new bubble grid.
+              Auto-detect bubble grids on any blank form, migrate legacy OMRChecker JSON, or click-drag blocks.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              disabled={detecting}
+              onClick={() => autoDetectRef.current?.click()}
+              className="btn-primary text-xs"
+            >
+              <Wand2 className="w-3.5 h-3.5" /> {detecting ? "Detecting..." : "Auto-Detect Grids"}
+            </button>
+            <input
+              ref={autoDetectRef}
+              type="file"
+              accept="image/*,.pdf"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void handleAutoDetectGrids(f);
+              }}
+            />
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
               className="btn-secondary text-xs"
             >
-              <Upload className="w-3.5 h-3.5" /> Load Blank Sheet
+              <Upload className="w-3.5 h-3.5" /> Blank Image
             </button>
             <input
               ref={fileRef}
@@ -326,15 +380,33 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
                 if (f) void handleUploadBackground(f);
               }}
             />
+            <button
+              type="button"
+              onClick={() => legacyRef.current?.click()}
+              className="btn-secondary text-xs"
+              title="Convert legacy OMRChecker v1 template.json"
+            >
+              <FileCode2 className="w-3.5 h-3.5" /> Migrate v1
+            </button>
+            <input
+              ref={legacyRef}
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void handleMigrateLegacy(f);
+              }}
+            />
             <button type="button" onClick={handleDownloadJson} className="btn-secondary text-xs">
-              <Download className="w-3.5 h-3.5" /> Export JSON
+              <Download className="w-3.5 h-3.5" /> JSON
             </button>
             <button
               type="button"
               onClick={() => void handleValidateAndApply()}
               className="btn-accent text-xs"
             >
-              <Check className="w-3.5 h-3.5" /> Validate & Activate
+              <Check className="w-3.5 h-3.5" /> Activate
             </button>
           </div>
         </div>

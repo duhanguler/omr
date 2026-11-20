@@ -2,6 +2,19 @@
 
 All notable changes to **OMRKit** are documented in this file.
 
+## [2.1.0] - 2026-11-20
+
+### Added
+- **QR Code Auto-Template Discovery (`omrkit.vision.qr`, `omrkit.core.auto_scanner`):** Every generated PDF embeds an OpenCV-native QR template badge enabling zero-template scanning via `omrkit scan <input>` (omitting `-t`), `scan_image_auto()`, and `POST /api/scan` (`template_json="auto"`).
+- **Automatic Blank-Form Bubble Grid Finder (`omrkit.vision.grid_finder`):** Detects circular bubbles on arbitrary blank optical sheets and clusters them into ready-to-use `FieldBlock` definitions via `omrkit detect-layout`, `POST /api/templates/auto-detect`, and the Studio **Auto-Detect Grids** button.
+- **Live Browser Camera / Webcam Scanner (`studio/src/views/CameraScanner.tsx`):** Real-time `getUserMedia` viewfinder with corner guide reticle, Auto-Lock sheet capture, audio confirmation, and QR auto-recognition.
+- **One-Click Interactive Demo Mode (`POST /api/demo/cohort`):** Header **Try Demo** button in Web Studio loads a realistic 5-student cohort (clean, shadow/warp, 90°-rotated checkmarks, multi-marked HITL review item) with full YKS/TYT grading and CTT psychometrics.
+- **Legacy `OMRChecker` v1 Template Migrator (`omrkit.core.migrator`):** One-command conversion via `omrkit migrate-template`, `POST /api/templates/migrate`, and Studio **Migrate v1**.
+- **Cloud Deploy Support:** Automatic `$PORT` handling in `omrkit studio` and `Dockerfile`.
+
+### Fixed
+- Resolved NumPy 2.x / Python 3.12 strict `mypy` overload checks in `omrkit.vision.registration`.
+
 ## [2.0.0] - 2026-11-20
 
 ### Added

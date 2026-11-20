@@ -210,7 +210,7 @@ def _match_four_markers(
             continue
         scaled = cv2.resize(base_marker, (tw, th), interpolation=cv2.INTER_AREA)
         res = cv2.matchTemplate(work_proc, scaled, cv2.TM_CCOEFF_NORMED)
-        score = float(res.max())
+        score = float(np.max(res))
         if score > best_global_score:
             best_global_score = score
             best_scale = float(s)
@@ -275,8 +275,8 @@ def _template_structure_score(warped_bgr: np.ndarray, template: Template) -> flo
         return 1.0
     gray = cv2.resize(ensure_grayscale(warped_bgr), (mw, mh), interpolation=cv2.INTER_AREA)
     edges = cv2.Canny(gray, 40, 120) > 0
-    in_density = float(edges[mask].mean())
-    out_density = float(edges[~mask].mean())
+    in_density = float(np.mean(edges[mask]))
+    out_density = float(np.mean(edges[~mask]))
     return in_density / (out_density + 0.005)
 
 
@@ -440,7 +440,7 @@ def _register_homography(image_bgr: np.ndarray, template: Template) -> Registrat
     if matrix is None:
         raise RegistrationError("RANSAC homography estimation failed.")
 
-    inlier_ratio = float(mask.mean()) if mask is not None and mask.size > 0 else 0.5
+    inlier_ratio = float(np.mean(mask)) if mask is not None and mask.size > 0 else 0.5
     warped = cv2.warpPerspective(
         image_bgr,
         matrix,

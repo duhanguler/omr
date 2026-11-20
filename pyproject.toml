@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "omrkit"
-version = "2.0.0"
+version = "2.1.0"
 description = "Modern Optical Mark Recognition engine with PDF/ArUco alignment, confidence-scored hybrid bubble detection, printable sheet generation, exam psychometrics, REST API, and Visual Web Studio."
 readme = "README.md"
 license = { text = "MIT" }

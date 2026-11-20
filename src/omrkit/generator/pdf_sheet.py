@@ -21,6 +21,7 @@ from omrkit.models.template import (
     RegistrationConfig,
     Template,
 )
+from omrkit.vision.qr import encode_sheet_qr_payload, render_qr_matrix
 
 _MM_TO_PT = 72.0 / 25.4
 _PAGE_DIMENSIONS_MM: dict[str, tuple[float, float]] = {
@@ -45,6 +46,16 @@ def _aruco_image_reader(marker_id: int, pixel_size: int = 240) -> ImageReader:
     pad = pixel_size // 8
     padded = cv2.copyMakeBorder(marker_img, pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=255)
     pil_img = Image.fromarray(padded).convert("L")
+    buf = io.BytesIO()
+    pil_img.save(buf, format="PNG")
+    buf.seek(0)
+    return ImageReader(buf)
+
+
+def _qr_image_reader(preset_id: str, pixel_size: int = 220) -> ImageReader:
+    payload = encode_sheet_qr_payload(preset_id)
+    qr_img = render_qr_matrix(payload, pixel_size=pixel_size)
+    pil_img = Image.fromarray(qr_img).convert("L")
     buf = io.BytesIO()
     pil_img.save(buf, format="PNG")
     buf.seek(0)
@@ -120,9 +131,22 @@ class SheetGenerator:
         pdf.setFont("Helvetica", 8.5)
         pdf.drawCentredString(page_w_pt / 2.0, y_pt(18.5), _ascii_safe(spec.subtitle))
 
-        # Name / Date box
+        # Name / Date box + embedded auto-detect QR template identifier
+        qr_size_mm = 15.0
+        qr_left_mm = page_w_mm - 41.0
+        qr_top_mm = 20.0
+        pdf.drawImage(
+            _qr_image_reader(spec.preset_id),
+            x_pt(qr_left_mm),
+            y_pt(qr_top_mm + qr_size_mm),
+            width=qr_size_mm * _MM_TO_PT,
+            height=qr_size_mm * _MM_TO_PT,
+            preserveAspectRatio=True,
+            mask=None,
+        )
+
         box_left = 26.0
-        box_right = page_w_mm - 26.0
+        box_right = qr_left_mm - 3.0
         pdf.setStrokeColor(border)
         pdf.setLineWidth(0.7)
         pdf.roundRect(
@@ -137,7 +161,7 @@ class SheetGenerator:
         pdf.setFillColor(muted)
         pdf.setFont("Helvetica-Bold", 7.5)
         pdf.drawString(x_pt(box_left + 3.0), y_pt(28.5), "NAME / SURNAME:")
-        pdf.drawString(x_pt(box_right - 48.0), y_pt(28.5), "DATE:")
+        pdf.drawString(x_pt(box_right - 44.0), y_pt(28.5), "DATE:")
 
         blocks: list[FieldBlock] = []
         content_left = 18.0
