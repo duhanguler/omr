@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import math
 import os
 from pathlib import Path
 from time import perf_counter
@@ -14,12 +15,13 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
+from omrkit._version import __version__
 from omrkit.core.auto_scanner import scan_file_auto
 from omrkit.core.benchmark import run_benchmark
 from omrkit.core.migrator import migrate_legacy_template_file
-from omrkit.core.scanner import OMRScanner
+from omrkit.core.scanner import OMRScanner, ensure_unique_sheet_ids
 from omrkit.generator.pdf_sheet import SheetGenerator
-from omrkit.generator.presets import get_sheet_preset, get_sheet_presets
+from omrkit.generator.presets import SheetSpec, get_sheet_preset, get_sheet_presets
 from omrkit.grading.grader import ExamGrader
 from omrkit.io.exporters import export_csv, export_excel, export_json, export_pdf_scorecard
 from omrkit.io.loader import discover_documents, load_document, strip_exif_and_save
@@ -30,7 +32,7 @@ from omrkit.vision.grid_finder import detect_layout_from_blank
 
 app = typer.Typer(
     name="omrkit",
-    help="OMRKit v2.1 — Modern Optical Mark Recognition engine, QR Auto-Scan, Sheet Generator, Psychometrics & Web Studio.",
+    help=f"OMRKit v{__version__} — Modern Optical Mark Recognition engine, QR Auto-Scan, Sheet Generator, Psychometrics & Web Studio.",
     no_args_is_help=True,
     rich_markup_mode="rich",
 )
@@ -125,6 +127,7 @@ def scan(
         all_sheets: list[SheetResult] = []
         for f in files:
             all_sheets.extend(scan_file_auto(f, dpi=dpi, save_overlay_dir=overlay_dir))
+        ensure_unique_sheet_ids(all_sheets)
         elapsed = (perf_counter() - t0) * 1000.0
         succeeded = sum(1 for r in all_sheets if r.error is None)
         failed = sum(1 for r in all_sheets if r.error is not None)
@@ -223,11 +226,16 @@ def generate(
         console.print(table)
         return
 
-    spec = get_sheet_preset(preset).model_copy(deep=True)
+    base = get_sheet_preset(preset).model_dump()
     if title is not None:
-        spec.title = title
+        base["title"] = title
     if questions is not None:
-        spec.num_questions = questions
+        base["num_questions"] = questions
+        max_cols = 4 if len(base["options"]) >= 5 else 5
+        min_rows = math.ceil(questions / max_cols)
+        if base["questions_per_column"] < min_rows:
+            base["questions_per_column"] = min(30, min_rows)
+    spec = SheetSpec.model_validate(base)
 
     paths = SheetGenerator().generate_to_dir(spec, output)
     console.print(f"[green]Generated optical sheet bundle in '{output}':[/green]")
@@ -303,7 +311,8 @@ def grade(
 ) -> None:
     """Grade previously scanned results and compute Classical Test Theory psychometrics."""
     raw = json.loads(results_json.read_text(encoding="utf-8"))
-    sheets = [SheetResult.model_validate(item) for item in raw.get("sheets", raw)]
+    raw_items = raw["sheets"] if isinstance(raw, dict) and "sheets" in raw else raw
+    sheets = [SheetResult.model_validate(item) for item in raw_items]
     key = AnswerKey.from_file(answer_key)
     grader = ExamGrader(key, GradingPolicy.preset(policy))
     report = grader.grade_batch(sheets)

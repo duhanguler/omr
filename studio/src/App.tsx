@@ -36,6 +36,7 @@ export default function App() {
   const [scanResponse, setScanResponse] = useState<ScanResponse | null>(null);
   const [gradingReport, setGradingReport] = useState<GradingReport | null>(null);
   const [loadingDemo, setLoadingDemo] = useState(false);
+  const [demoError, setDemoError] = useState<string | null>(null);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
 
@@ -63,6 +64,7 @@ export default function App() {
 
   async function handleRunDemo() {
     setLoadingDemo(true);
+    setDemoError(null);
     try {
       const demo = await loadDemoCohort("quick_quiz_20");
       setActiveTemplate(demo.template);
@@ -70,6 +72,12 @@ export default function App() {
       setScanResponse(demo.scan_response);
       setGradingReport(demo.grading_report);
       setTab("scan");
+    } catch (err) {
+      setDemoError(
+        err instanceof Error
+          ? `Could not load demo cohort: ${err.message}`
+          : "Could not load demo cohort. Please try again."
+      );
     } finally {
       setLoadingDemo(false);
     }
@@ -101,14 +109,33 @@ export default function App() {
         if (sheet.sheet_id !== sheetId) return sheet;
         const fields = { ...sheet.fields };
         const grouped = { ...sheet.grouped_values };
+        let overallConfidence = sheet.overall_confidence;
         if (fieldId in fields) {
+          const prevField = fields[fieldId];
+          const validOpts = new Set(prevField.bubbles.map((b) => b.option));
+          const selectedOpts = !value
+            ? []
+            : validOpts.has(value)
+              ? [value]
+              : value.split("");
+          const selectedSet = new Set(selectedOpts);
           fields[fieldId] = {
-            ...fields[fieldId],
+            ...prevField,
             value,
-            selected_options: value ? value.split("") : [],
+            selected_options: selectedOpts,
             confidence: 1.0,
             status: value ? "ok" : "blank",
+            bubbles: prevField.bubbles.map((b) => ({
+              ...b,
+              selected: selectedSet.has(b.option),
+            })),
           };
+          const fieldList = Object.values(fields);
+          if (fieldList.length > 0) {
+            const avg =
+              fieldList.reduce((sum, f) => sum + f.confidence, 0) / fieldList.length;
+            overallConfidence = Math.round(avg * 10000) / 10000;
+          }
         } else if (fieldId in grouped) {
           grouped[fieldId] = value;
         }
@@ -116,6 +143,7 @@ export default function App() {
           ...sheet,
           fields,
           grouped_values: grouped,
+          overall_confidence: overallConfidence,
           review_items: sheet.review_items.filter((item) => item.field_id !== fieldId),
         };
       });
@@ -125,6 +153,8 @@ export default function App() {
         flagged_sheets: updatedSheets.filter((s) => s.review_items.length > 0).length,
       };
     });
+    // Invalidate stale grades so Grading & Analytics reflects the human override
+    setGradingReport(null);
   }
 
   const totalFlags =
@@ -152,7 +182,9 @@ export default function App() {
               <h1 className="text-sm font-bold tracking-tight text-[var(--ink-primary)]">
                 OMRKit Studio
               </h1>
-              <p className="text-[11px] font-mono text-[var(--ink-muted)]">v2.1 · Optical Workbench</p>
+              <p className="text-[11px] font-mono text-[var(--ink-muted)]">
+                v{health?.version ?? "2.1.1"} · Optical Workbench
+              </p>
             </div>
           </div>
 
@@ -236,6 +268,22 @@ export default function App() {
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {demoError && (
+        <div className="bg-[var(--signal-err-bg)] border-b border-red-200">
+          <div className="max-w-[1440px] mx-auto px-4 sm:px-6 py-2 flex items-center justify-between gap-2 text-xs text-[var(--signal-err)]">
+            <span>{demoError}</span>
+            <button
+              type="button"
+              aria-label="Dismiss error"
+              onClick={() => setDemoError(null)}
+              className="hover:opacity-75 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
       )}

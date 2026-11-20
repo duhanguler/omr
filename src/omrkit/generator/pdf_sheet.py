@@ -13,6 +13,7 @@ from reportlab.lib import colors
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas as rl_canvas
 
+from omrkit._version import __version__
 from omrkit.generator.presets import SheetSpec
 from omrkit.models.grading import AnswerKey
 from omrkit.models.template import (
@@ -84,7 +85,7 @@ class SheetGenerator:
         buf = io.BytesIO()
         pdf = rl_canvas.Canvas(buf, pagesize=(page_w_pt, page_h_pt))
         pdf.setTitle(_ascii_safe(spec.title))
-        pdf.setAuthor("OMRKit v2.0")
+        pdf.setAuthor(f"OMRKit v{__version__}")
 
         def x_pt(x_mm: float) -> float:
             return x_mm * _MM_TO_PT
@@ -427,7 +428,7 @@ class SheetGenerator:
         pdf.drawCentredString(
             page_w_pt / 2.0,
             y_pt(page_h_mm - 11.5),
-            f"OMRKit v2.0 | Preset: {spec.preset_id} | ArUco DICT_4X4_50 [0,1,2,3] | {page_w_px}x{page_h_px}@{dpi}DPI",
+            f"OMRKit v{__version__} | Preset: {spec.preset_id} | ArUco DICT_4X4_50 [0,1,2,3] | {page_w_px}x{page_h_px}@{dpi}DPI",
         )
 
         pdf.showPage()

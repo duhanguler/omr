@@ -34,7 +34,10 @@ def render_annotated_sheet(
             r = max(4, round(bubble.radius))
 
             if verdict is not None:
-                is_expected = bubble.option in verdict.expected
+                expected_tokens = {
+                    tok.strip() for tok in verdict.expected.split("/") if tok.strip()
+                }
+                is_expected = bubble.option in expected_tokens
                 if bubble.selected and verdict.verdict in {"correct", "bonus"}:
                     cv2.circle(canvas, (cx, cy), r + 2, _CLR_OK, 3, cv2.LINE_AA)
                 elif bubble.selected and verdict.verdict == "incorrect":

@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from omrkit._version import __version__
 from omrkit.api.routes import router
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -24,7 +25,7 @@ def create_app() -> FastAPI:
             "confidence-scored bubble detection, printable PDF sheet generation, "
             "and Classical Test Theory exam psychometrics."
         ),
-        version="2.1.0",
+        version=__version__,
         docs_url="/docs",
         redoc_url="/redoc",
     )
@@ -66,7 +67,7 @@ def create_app() -> FastAPI:
             return FileResponse(index_html)
         return HTMLResponse(
             "<html><body style='font-family:sans-serif;padding:2rem;'>"
-            "<h1>OMRKit v2.1 API is running</h1>"
+            f"<h1>OMRKit v{__version__} API is running</h1>"
             "<p>Interactive API docs: <a href='/docs'>/docs</a></p>"
             "<p>Build the Web Studio frontend via <code>cd studio && npm run build</code>.</p>"
             "</body></html>"

@@ -29,16 +29,19 @@ class RegistrationResult:
 
 
 def order_quad_points(pts: np.ndarray) -> np.ndarray:
-    """Order 4 2D points consistently as [top-left, top-right, bottom-right, bottom-left]."""
+    """Order 4 2D points consistently as [top-left, top-right, bottom-right, bottom-left].
+
+    Uses centroid polar-angle sorting (clockwise in image Y-down coordinates) rotated
+    to start at the top-left corner, guaranteeing 4 distinct vertices even on 45-degree
+    diamond-oriented quads where sum/diff heuristics can collapse two corners.
+    """
     arr = np.asarray(pts, dtype=np.float32).reshape(4, 2)
-    ordered = np.zeros((4, 2), dtype=np.float32)
-    s = arr.sum(axis=1)
-    diff = np.diff(arr, axis=1).reshape(-1)
-    ordered[0] = arr[int(np.argmin(s))]  # TL
-    ordered[2] = arr[int(np.argmax(s))]  # BR
-    ordered[1] = arr[int(np.argmin(diff))]  # TR
-    ordered[3] = arr[int(np.argmax(diff))]  # BL
-    return ordered
+    centroid = arr.mean(axis=0)
+    angles = np.arctan2(arr[:, 1] - centroid[1], arr[:, 0] - centroid[0])
+    # In image coordinates (x right, y down), ascending atan2 from -pi to +pi is clockwise
+    cw = arr[np.argsort(angles)]
+    tl_idx = int(np.argmin(cw[:, 0] + cw[:, 1]))
+    return np.roll(cw, -tl_idx, axis=0).astype(np.float32)
 
 
 def _default_target_corners(template: Template) -> np.ndarray:

@@ -50,11 +50,15 @@ export async function fetchPresets(): Promise<PresetsResponse> {
   return handleJson<PresetsResponse>(res);
 }
 
-export async function generateSheet(spec: SheetSpec): Promise<GenerateResponse> {
+export async function generateSheet(
+  spec: SheetSpec,
+  signal?: AbortSignal
+): Promise<GenerateResponse> {
   const res = await fetch("/api/generate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(spec),
+    signal,
   });
   return handleJson<GenerateResponse>(res);
 }

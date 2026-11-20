@@ -124,6 +124,7 @@ export function ScanWorkspace({
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) void handleTemplateUpload(file);
+                e.target.value = "";
               }}
             />
           </div>
@@ -199,6 +200,7 @@ export function ScanWorkspace({
               className="hidden"
               onChange={(e) => {
                 if (e.target.files) setSelectedFiles(Array.from(e.target.files));
+                e.target.value = "";
               }}
             />
           </div>

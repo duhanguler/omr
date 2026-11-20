@@ -2,42 +2,96 @@
 
 from __future__ import annotations
 
+import math
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 PageFormat = Literal["A4", "LETTER"]
+
+_PAGE_WIDTHS_MM: dict[str, float] = {
+    "A4": 210.0,
+    "LETTER": 215.9,
+}
 
 
 class IdGridSpec(BaseModel):
     """Specification for a vertical numeric/alphanumeric ID grid on a generated sheet."""
 
-    name: str
-    title: str
+    name: str = Field(min_length=1)
+    title: str = Field(min_length=1)
     digits: int = Field(ge=1, le=14)
-    options: list[str] = Field(default_factory=lambda: [str(i) for i in range(10)])
+    options: list[str] = Field(
+        default_factory=lambda: [str(i) for i in range(10)],
+        min_length=2,
+        max_length=16,
+    )
     validator: Literal["tr_tckn", "luhn", "digits", "non_empty"] | None = "digits"
 
 
 class SheetSpec(BaseModel):
     """High-level blueprint used by SheetGenerator to create a printable PDF + exact Template."""
 
-    preset_id: str = "custom"
+    preset_id: str = Field(default="custom", min_length=1)
     title: str = "OPTICAL ANSWER SHEET"
     subtitle: str = "Fill bubbles completely with a dark pen or pencil."
     page_format: PageFormat = "A4"
     dpi: int = Field(default=200, ge=150, le=300)
     num_questions: int = Field(default=40, ge=5, le=120)
-    options: list[str] = Field(default_factory=lambda: ["A", "B", "C", "D", "E"])
+    options: list[str] = Field(
+        default_factory=lambda: ["A", "B", "C", "D", "E"],
+        min_length=2,
+        max_length=8,
+    )
     questions_per_column: int = Field(default=20, ge=5, le=30)
     include_booklet: bool = True
-    booklet_options: list[str] = Field(default_factory=lambda: ["A", "B", "C", "D"])
+    booklet_options: list[str] = Field(
+        default_factory=lambda: ["A", "B", "C", "D"],
+        min_length=1,
+        max_length=8,
+    )
     id_grids: list[IdGridSpec] = Field(
         default_factory=lambda: [
             IdGridSpec(name="STUDENT_ID", title="Student ID", digits=8, validator="digits")
-        ]
+        ],
+        max_length=4,
     )
-    question_prefix: str = "q"
+    question_prefix: str = Field(default="q", min_length=1, max_length=16)
+
+    @model_validator(mode="after")
+    def _validate_sheet_geometry(self) -> SheetSpec:
+        if len(set(self.options)) != len(self.options) or any(not o.strip() for o in self.options):
+            raise ValueError("Sheet options must be non-empty and unique.")
+        if self.include_booklet and (
+            len(set(self.booklet_options)) != len(self.booklet_options)
+            or any(not o.strip() for o in self.booklet_options)
+        ):
+            raise ValueError("Booklet options must be non-empty and unique.")
+        if self.question_prefix[-1].isdigit() or self.question_prefix[-1] == ".":
+            raise ValueError(
+                "question_prefix must end with a letter or underscore (e.g., 'q' or 's1_q')."
+            )
+
+        num_cols = math.ceil(self.num_questions / self.questions_per_column)
+        max_cols = 4 if len(self.options) >= 5 else 5
+        if num_cols > max_cols:
+            min_rows = math.ceil(self.num_questions / max_cols)
+            raise ValueError(
+                f"Layout requires {num_cols} columns ({self.num_questions} questions / "
+                f"{self.questions_per_column} per column), exceeding the {max_cols}-column page "
+                f"limit for {len(self.options)} options. Set questions_per_column >= {min_rows}."
+            )
+
+        content_w_mm = _PAGE_WIDTHS_MM[self.page_format] - 36.0
+        total_id_w = sum((g.digits - 1) * 5.6 + 10.0 + 5.0 for g in self.id_grids)
+        bk_w = (
+            max(32.0, (len(self.booklet_options) - 1) * 7.5 + 14.0) if self.include_booklet else 0.0
+        )
+        if total_id_w + bk_w > content_w_mm + 5.0:
+            raise ValueError(
+                f"Configured ID grids and booklet selector exceed {self.page_format} page width."
+            )
+        return self
 
 
 def get_sheet_presets() -> dict[str, SheetSpec]:

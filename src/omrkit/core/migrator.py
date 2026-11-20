@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ from omrkit.models.template import (
     FieldType,
     RegistrationConfig,
     Template,
+    expand_field_labels,
 )
 
 _LEGACY_FIELD_TYPES: dict[str, tuple[list[str], BlockDirection, FieldType]] = {
@@ -32,16 +34,25 @@ def migrate_legacy_template_dict(
     bubble_dims = legacy.get("bubbleDimensions", [24, 24])
     if not isinstance(page_dims, list) or len(page_dims) != 2:
         raise ValueError("Legacy template must define 'pageDimensions': [width, height].")
+    if not isinstance(bubble_dims, list) or len(bubble_dims) != 2:
+        raise ValueError("Legacy template 'bubbleDimensions' must be a 2-element [w, h] list.")
 
     page_w, page_h = int(page_dims[0]), int(page_dims[1])
-    default_radius = max(4.0, round(min(float(bubble_dims[0]), float(bubble_dims[1])) / 2.0, 2))
+    bw_val, bh_val = float(bubble_dims[0]), float(bubble_dims[1])
+    if bw_val <= 0 or bh_val <= 0:
+        raise ValueError("Legacy template 'bubbleDimensions' must contain positive numbers.")
+    default_radius = max(4.0, round(min(bw_val, bh_val) / 2.0, 2))
     global_empty = str(legacy.get("emptyValue", ""))
 
     # Translate preProcessors -> RegistrationConfig
     registration = RegistrationConfig(mode="none")
     for pp in legacy.get("preProcessors", []):
+        if not isinstance(pp, dict):
+            continue
         pp_name = pp.get("name")
         opts = pp.get("options", {})
+        if not isinstance(opts, dict):
+            opts = {}
         if pp_name == "CropOnMarkers":
             registration = RegistrationConfig(
                 mode="markers",
@@ -55,6 +66,8 @@ def migrate_legacy_template_dict(
             break
         if pp_name == "CropPage":
             mk = opts.get("morphKernel", [10, 10])
+            if not isinstance(mk, list) or len(mk) != 2:
+                mk = [10, 10]
             registration = RegistrationConfig(
                 mode="page_quad",
                 morph_kernel=(int(mk[0]), int(mk[1])),
@@ -69,11 +82,16 @@ def migrate_legacy_template_dict(
             )
             break
 
-    # Build lookup from exact field label list -> customLabel group name
+    # Build lookup from both raw and expanded field label tuples -> customLabel group name
     custom_groups: dict[tuple[str, ...], str] = {}
-    for group_name, label_list in legacy.get("customLabels", {}).items():
-        if isinstance(label_list, list):
-            custom_groups[tuple(str(x) for x in label_list)] = str(group_name)
+    raw_custom = legacy.get("customLabels", {})
+    if isinstance(raw_custom, dict):
+        for group_name, label_list in raw_custom.items():
+            if isinstance(label_list, list):
+                raw_tokens = [str(x) for x in label_list]
+                custom_groups[tuple(raw_tokens)] = str(group_name)
+                with contextlib.suppress(ValueError):
+                    custom_groups[tuple(expand_field_labels(raw_tokens))] = str(group_name)
 
     blocks: list[FieldBlock] = []
     field_blocks = legacy.get("fieldBlocks", {})
@@ -81,6 +99,14 @@ def migrate_legacy_template_dict(
         raise ValueError("Legacy template must define a non-empty 'fieldBlocks' mapping.")
 
     for block_name, cfg in field_blocks.items():
+        if not isinstance(cfg, dict):
+            raise ValueError(f"Field block '{block_name}' must be a JSON object.")
+        for required_key in ("fieldLabels", "origin", "bubblesGap", "labelsGap"):
+            if required_key not in cfg:
+                raise ValueError(
+                    f"Field block '{block_name}' is missing required key '{required_key}'."
+                )
+
         legacy_ft = cfg.get("fieldType")
         if legacy_ft in _LEGACY_FIELD_TYPES:
             options, direction, ftype = _LEGACY_FIELD_TYPES[legacy_ft]
@@ -102,9 +128,21 @@ def migrate_legacy_template_dict(
             else default_radius
         )
 
-        labels = [str(x) for x in cfg["fieldLabels"]]
+        raw_field_labels = cfg["fieldLabels"]
+        if not isinstance(raw_field_labels, list) or not raw_field_labels:
+            raise ValueError(
+                f"Field block '{block_name}' must define a non-empty 'fieldLabels' list."
+            )
+        labels = [str(x) for x in raw_field_labels]
         group_as = custom_groups.get(tuple(labels))
+        if group_as is None:
+            group_as = custom_groups.get(tuple(expand_field_labels(labels)))
+
         origin_raw = cfg["origin"]
+        if not isinstance(origin_raw, list) or len(origin_raw) != 2:
+            raise ValueError(
+                f"Field block '{block_name}' 'origin' must be a 2-element [x, y] list."
+            )
 
         blocks.append(
             FieldBlock(

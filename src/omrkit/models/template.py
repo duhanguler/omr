@@ -16,11 +16,13 @@ BlockDirection = Literal["horizontal", "vertical"]
 OriginMode = Literal["center", "top_left"]
 ValidatorType = Literal["tr_tckn", "luhn", "digits", "non_empty"]
 
-_RANGE_PATTERN = re.compile(r"^([^\.\d]+)(\d+)\.{2,3}(\d+)$")
+_RANGE_PATTERN = re.compile(r"^(.*[^\.\d])(\d+)\.{2,3}(\d+)$")
+MAX_RANGE_EXPANSION = 2000
+MAX_TEMPLATE_FIELDS = 5000
 
 
 def expand_field_labels(raw_labels: list[str]) -> list[str]:
-    """Expand concise range expressions such as 'q1..25' or 'id01..11'."""
+    """Expand concise range expressions such as 'q1..25', 'id01..11', or 'sec1_q1..20'."""
     expanded: list[str] = []
     seen: set[str] = set()
     for token in raw_labels:
@@ -31,6 +33,11 @@ def expand_field_labels(raw_labels: list[str]) -> list[str]:
             if end < start:
                 raise ValueError(
                     f"Invalid label range '{token}': end ({end}) must be >= start ({start})."
+                )
+            if (end - start + 1) > MAX_RANGE_EXPANSION:
+                raise ValueError(
+                    f"Label range '{token}' expands to {end - start + 1} fields, "
+                    f"exceeding the maximum of {MAX_RANGE_EXPANSION}."
                 )
             pad = len(start_s) if start_s.startswith("0") and len(start_s) > 1 else 0
             for idx in range(start, end + 1):
@@ -44,6 +51,10 @@ def expand_field_labels(raw_labels: list[str]) -> list[str]:
                 raise ValueError(f"Duplicate label '{token}'.")
             seen.add(token)
             expanded.append(token)
+        if len(expanded) > MAX_TEMPLATE_FIELDS:
+            raise ValueError(
+                f"Expanded field count exceeds the maximum of {MAX_TEMPLATE_FIELDS} fields."
+            )
     return expanded
 
 
@@ -185,8 +196,8 @@ class Template(BaseModel):
     version: str = "2.0"
     name: str = Field(min_length=1)
     description: str = ""
-    page_width: int = Field(gt=50)
-    page_height: int = Field(gt=50)
+    page_width: int = Field(gt=50, le=12000)
+    page_height: int = Field(gt=50, le=12000)
     registration: RegistrationConfig = Field(default_factory=RegistrationConfig)
     detection: DetectionConfig = Field(default_factory=DetectionConfig)
     blocks: list[FieldBlock] = Field(min_length=1)
@@ -209,6 +220,10 @@ class Template(BaseModel):
                         f"Field label '{field_id}' in block '{block.name}' overlaps an existing field."
                     )
                 seen_fields.add(field_id)
+                if len(seen_fields) > MAX_TEMPLATE_FIELDS:
+                    raise ValueError(
+                        f"Template exceeds the maximum of {MAX_TEMPLATE_FIELDS} total fields."
+                    )
 
                 for bubble in bubbles:
                     if (

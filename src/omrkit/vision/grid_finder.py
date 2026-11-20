@@ -210,15 +210,24 @@ def detect_layout_from_blank(
         col_gaps = [
             (row[-1].cx - row[0].cx) / float(max(1, n_cols - 1)) for row in stack if n_cols > 1
         ]
-        raw_row_gaps = [ys_rows[k + 1] - ys_rows[k] for k in range(len(ys_rows) - 1)]
-        # Use lower-half median of row gaps to ignore occasional skipped rows
-        unit_gaps = [g for g in raw_row_gaps if g <= float(np.min(raw_row_gaps)) * 1.45]
-        dy_val = float(np.median(unit_gaps)) if unit_gaps else base_gap
+        raw_row_gaps = [
+            ys_rows[k + 1] - ys_rows[k]
+            for k in range(len(ys_rows) - 1)
+            if (ys_rows[k + 1] - ys_rows[k]) >= median_r * 1.5
+        ]
+        # Use lower-half median of plausible row gaps to ignore occasional skipped rows
+        if raw_row_gaps:
+            min_gap = float(np.min(raw_row_gaps))
+            unit_gaps = [g for g in raw_row_gaps if g <= min_gap * 1.45]
+            dy_val = float(np.median(unit_gaps)) if unit_gaps else base_gap
+        else:
+            dy_val = base_gap
         # Reconstruct exact row count spanning first to last detected row
-        n_rows = max(len(stack), round((ys_rows[-1] - ys_rows[0]) / max(dy_val, 1.0)) + 1)
+        span_y = max(0.0, ys_rows[-1] - ys_rows[0])
+        n_rows = max(len(stack), round(span_y / max(dy_val, median_r * 1.5)) + 1)
 
         dx = round(float(np.median(col_gaps)) if col_gaps else base_gap, 2)
-        dy = round((ys_rows[-1] - ys_rows[0]) / float(max(1, n_rows - 1)), 2)
+        dy = round(max(median_r * 1.5, span_y / float(max(1, n_rows - 1))), 2)
         radius = round(median_r, 1)
 
         # Heuristic: 10-row grid is almost always a vertical 0-9 digit ID block
@@ -243,7 +252,9 @@ def detect_layout_from_blank(
                 )
             )
         else:
-            opt_labels = [chr(ord("A") + idx) for idx in range(n_cols)]
+            opt_labels = [
+                chr(ord("A") + idx) if idx < 26 else f"O{idx + 1}" for idx in range(n_cols)
+            ]
             end_q = q_counter + n_rows - 1
             blocks.append(
                 FieldBlock(

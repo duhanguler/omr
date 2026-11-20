@@ -27,21 +27,27 @@ export function SheetGenerator({ presets, onActivateGenerated }: SheetGeneratorP
 
   useEffect(() => {
     if (!spec) return;
+    const controller = new AbortController();
     let active = true;
-    setLoading(true);
-    setError(null);
-    generateSheet(spec)
-      .then((res) => {
-        if (active) setGenerated(res);
-      })
-      .catch((err) => {
-        if (active) setError(err instanceof Error ? err.message : "Generation failed.");
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
+    const timer = window.setTimeout(() => {
+      setLoading(true);
+      setError(null);
+      generateSheet(spec, controller.signal)
+        .then((res) => {
+          if (active) setGenerated(res);
+        })
+        .catch((err: unknown) => {
+          if (err instanceof DOMException && err.name === "AbortError") return;
+          if (active) setError(err instanceof Error ? err.message : "Generation failed.");
+        })
+        .finally(() => {
+          if (active) setLoading(false);
+        });
+    }, 300);
     return () => {
       active = false;
+      window.clearTimeout(timer);
+      controller.abort();
     };
   }, [spec]);
 
@@ -66,6 +72,9 @@ export function SheetGenerator({ presets, onActivateGenerated }: SheetGeneratorP
   if (!spec) {
     return <div className="paper-card p-8 text-center text-sm text-[var(--ink-muted)]">Loading presets...</div>;
   }
+
+  const maxColsForOptions = spec.options.length >= 5 ? 4 : 5;
+  const minRowsPerCol = Math.max(5, Math.ceil(spec.num_questions / maxColsForOptions));
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
@@ -135,27 +144,35 @@ export function SheetGenerator({ presets, onActivateGenerated }: SheetGeneratorP
                 max={120}
                 className="workbench-input w-full font-mono"
                 value={spec.num_questions}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const nextQ = Math.max(5, Math.min(120, Number(e.target.value) || 20));
+                  const requiredRows = Math.max(5, Math.ceil(nextQ / maxColsForOptions));
                   setSpec({
                     ...spec,
-                    num_questions: Math.max(5, Math.min(120, Number(e.target.value) || 20)),
-                  })
-                }
+                    num_questions: nextQ,
+                    questions_per_column: Math.min(30, Math.max(spec.questions_per_column, requiredRows)),
+                  });
+                }}
               />
             </label>
 
             <label className="space-y-1">
-              <span className="text-[var(--ink-secondary)]">Rows / Column</span>
+              <span className="text-[var(--ink-secondary)]">
+                Rows / Column ({minRowsPerCol}–30)
+              </span>
               <input
                 type="number"
-                min={5}
+                min={minRowsPerCol}
                 max={30}
                 className="workbench-input w-full font-mono"
                 value={spec.questions_per_column}
                 onChange={(e) =>
                   setSpec({
                     ...spec,
-                    questions_per_column: Math.max(5, Math.min(30, Number(e.target.value) || 20)),
+                    questions_per_column: Math.max(
+                      minRowsPerCol,
+                      Math.min(30, Number(e.target.value) || minRowsPerCol)
+                    ),
                   })
                 }
               />
@@ -180,7 +197,16 @@ export function SheetGenerator({ presets, onActivateGenerated }: SheetGeneratorP
               <select
                 className="workbench-input w-full font-mono"
                 value={spec.options.join("")}
-                onChange={(e) => setSpec({ ...spec, options: e.target.value.split("") })}
+                onChange={(e) => {
+                  const nextOpts = e.target.value.split("");
+                  const nextMaxCols = nextOpts.length >= 5 ? 4 : 5;
+                  const reqRows = Math.max(5, Math.ceil(spec.num_questions / nextMaxCols));
+                  setSpec({
+                    ...spec,
+                    options: nextOpts,
+                    questions_per_column: Math.min(30, Math.max(spec.questions_per_column, reqRows)),
+                  });
+                }}
               >
                 <option value="ABCD">A – D (4 choices)</option>
                 <option value="ABCDE">A – E (5 choices)</option>
