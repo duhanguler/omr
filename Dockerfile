@@ -15,7 +15,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=8000 \
     OMRKIT_DEMO_MODE=false
 
-RUN useradd -m -u 1000 omrkit
+RUN apt-get update && apt-get install -y --no-install-recommends fonts-liberation \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -m -u 1000 omrkit
 WORKDIR /app
 
 COPY pyproject.toml README.md LICENSE ./

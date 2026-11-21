@@ -119,6 +119,9 @@ class DetectionConfig(BaseModel):
     fill_delta: float = Field(default=22.0, gt=1.0, le=150.0)
     ink_delta: float = Field(default=36.0, gt=1.0, le=200.0)
     multi_mark_ratio: float = Field(default=0.70, gt=0.2, le=1.0)
+    erased_dominance_ratio: float = Field(default=0.58, gt=0.2, le=0.95)
+    local_refinement: bool = True
+    local_refinement_px: int = Field(default=6, ge=0, le=12)
     normalize_illumination: bool = True
 
     @model_validator(mode="after")

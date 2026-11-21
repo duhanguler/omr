@@ -1,5 +1,15 @@
-import { useEffect, useRef, useState } from "react";
-import { Check, Download, FileCode2, Plus, Trash2, Upload, Wand2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Check,
+  Crosshair,
+  Download,
+  FileCode2,
+  Plus,
+  Redo2,
+  Trash2,
+  Undo2,
+  Upload,
+} from "lucide-react";
 import {
   autoDetectTemplateLayout,
   migrateLegacyTemplate,
@@ -7,9 +17,11 @@ import {
   triggerBlobDownload,
   validateTemplate,
 } from "../api/client";
+import type { Dictionary } from "../i18n";
 import type { FieldBlock, RegistrationMode, Template } from "../types";
 
 interface TemplateDesignerProps {
+  t: Dictionary;
   activeTemplate: Template | null;
   onUseTemplate: (template: Template) => void;
 }
@@ -20,6 +32,24 @@ interface DragRect {
   x1: number;
   y1: number;
 }
+
+interface MoveState {
+  blockIdx: number;
+  startCanvasX: number;
+  startCanvasY: number;
+  origX: number;
+  origY: number;
+  snapshot: Template;
+}
+
+interface BlockBounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+const MAX_HISTORY = 40;
 
 function expandLabelsPreview(labels: string[]): string[] {
   const MAX_PREVIEW = 500;
@@ -44,7 +74,33 @@ function expandLabelsPreview(labels: string[]): string[] {
   return out;
 }
 
-export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesignerProps) {
+function computeBlockBounds(blk: FieldBlock, scale: number): BlockBounds | null {
+  const expanded = expandLabelsPreview(blk.labels);
+  if (expanded.length === 0 || blk.options.length === 0) return null;
+
+  const ox = blk.origin[0] + (blk.origin_mode === "top_left" ? blk.bubble_radius : 0);
+  const oy = blk.origin[1] + (blk.origin_mode === "top_left" ? blk.bubble_radius : 0);
+  const sr = Math.max(2.5, blk.bubble_radius * scale);
+
+  const maxFi = expanded.length - 1;
+  const maxOi = blk.options.length - 1;
+  const endX = blk.direction === "horizontal" ? ox + maxOi * blk.bubbles_gap : ox + maxFi * blk.labels_gap;
+  const endY = blk.direction === "horizontal" ? oy + maxFi * blk.labels_gap : oy + maxOi * blk.bubbles_gap;
+
+  const sx0 = Math.min(ox, endX) * scale;
+  const sy0 = Math.min(oy, endY) * scale;
+  const sx1 = Math.max(ox, endX) * scale;
+  const sy1 = Math.max(oy, endY) * scale;
+
+  return {
+    minX: sx0 - sr - 5,
+    minY: sy0 - sr - 5,
+    maxX: sx1 + sr + 5,
+    maxY: sy1 + sr + 5,
+  };
+}
+
+export function TemplateDesigner({ t, activeTemplate, onUseTemplate }: TemplateDesignerProps) {
   const [template, setTemplate] = useState<Template>(
     () =>
       activeTemplate ?? {
@@ -77,14 +133,20 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
         ],
       }
   );
+  const [past, setPast] = useState<Template[]>([]);
+  const [future, setFuture] = useState<Template[]>([]);
   const [bgImageUrl, setBgImageUrl] = useState<string | null>(null);
   const [selectedIdx, setSelectedIdx] = useState<number>(0);
   const [optionsDraft, setOptionsDraft] = useState<string>("");
   const [labelsDraft, setLabelsDraft] = useState<string>("");
   const [dragRect, setDragRect] = useState<DragRect | null>(null);
+  const [moveState, setMoveState] = useState<MoveState | null>(null);
+  const [hoverBlockIdx, setHoverBlockIdx] = useState<number | null>(null);
+  const [cursorPx, setCursorPx] = useState<{ x: number; y: number } | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [detecting, setDetecting] = useState(false);
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -94,9 +156,105 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
   useEffect(() => {
     if (activeTemplate) {
       setTemplate(activeTemplate);
+      setPast([]);
+      setFuture([]);
       setSelectedIdx(0);
     }
   }, [activeTemplate]);
+
+  const commitChange = useCallback((updater: (prev: Template) => Template) => {
+    setTemplate((prev) => {
+      const next = updater(prev);
+      setPast((h) => [...h.slice(-(MAX_HISTORY - 1)), prev]);
+      setFuture([]);
+      return next;
+    });
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    setPast((prevPast) => {
+      if (prevPast.length === 0) return prevPast;
+      const previous = prevPast[prevPast.length - 1];
+      setTemplate((curr) => {
+        setFuture((f) => [curr, ...f.slice(0, MAX_HISTORY - 1)]);
+        return previous;
+      });
+      setSelectedIdx((idx) => Math.min(idx, Math.max(0, previous.blocks.length - 1)));
+      return prevPast.slice(0, -1);
+    });
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    setFuture((prevFuture) => {
+      if (prevFuture.length === 0) return prevFuture;
+      const next = prevFuture[0];
+      setTemplate((curr) => {
+        setPast((p) => [...p.slice(-(MAX_HISTORY - 1)), curr]);
+        return next;
+      });
+      setSelectedIdx((idx) => Math.min(idx, Math.max(0, next.blocks.length - 1)));
+      return prevFuture.slice(1);
+    });
+  }, []);
+
+  // Keyboard shortcuts: Arrow micro-nudge (1px / Shift 10px) + Ctrl/Cmd Undo/Redo
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")
+      ) {
+        return;
+      }
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        handleRedo();
+        return;
+      }
+
+      const step = e.shiftKey ? 10 : 1;
+      let dx = 0;
+      let dy = 0;
+      if (e.key === "ArrowLeft") dx = -step;
+      else if (e.key === "ArrowRight") dx = step;
+      else if (e.key === "ArrowUp") dy = -step;
+      else if (e.key === "ArrowDown") dy = step;
+      else return;
+
+      e.preventDefault();
+      commitChange((prev) => {
+        if (!prev.blocks[selectedIdx]) return prev;
+        return {
+          ...prev,
+          blocks: prev.blocks.map((b, i) =>
+            i === selectedIdx
+              ? {
+                  ...b,
+                  origin: [
+                    Math.max(0, Math.round(b.origin[0] + dx)),
+                    Math.max(0, Math.round(b.origin[1] + dy)),
+                  ],
+                }
+              : b
+          ),
+        };
+      });
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedIdx, commitChange, handleUndo, handleRedo]);
 
   const activeBlockForDraft = template.blocks[selectedIdx];
   useEffect(() => {
@@ -126,7 +284,12 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
   useEffect(() => {
     drawCanvas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [template, selectedIdx, dragRect]);
+  }, [template, selectedIdx, dragRect, hoverBlockIdx]);
+
+  function getCanvasScale(): number {
+    const maxDisplayW = 760;
+    return Math.min(1, maxDisplayW / Math.max(100, template.page_width));
+  }
 
   function drawCanvas() {
     const canvas = canvasRef.current;
@@ -134,8 +297,7 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const maxDisplayW = 760;
-    const scale = Math.min(1, maxDisplayW / template.page_width);
+    const scale = getCanvasScale();
     canvas.width = Math.round(template.page_width * scale);
     canvas.height = Math.round(template.page_height * scale);
 
@@ -145,7 +307,7 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
     if (imgRef.current) {
       ctx.drawImage(imgRef.current, 0, 0, canvas.width, canvas.height);
     } else {
-      ctx.strokeStyle = "#eceae3";
+      ctx.strokeStyle = "#ece9e0";
       ctx.lineWidth = 1;
       for (let x = 0; x < canvas.width; x += 40) {
         ctx.beginPath();
@@ -164,6 +326,7 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
     // Draw all FieldBlocks and their bubbles
     template.blocks.forEach((blk, bIdx) => {
       const isSelected = bIdx === selectedIdx;
+      const isHovered = bIdx === hoverBlockIdx && !isSelected;
       const expanded = expandLabelsPreview(blk.labels);
       const ox = blk.origin[0] + (blk.origin_mode === "top_left" ? blk.bubble_radius : 0);
       const oy = blk.origin[1] + (blk.origin_mode === "top_left" ? blk.bubble_radius : 0);
@@ -175,8 +338,10 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
 
       expanded.forEach((_, fi) => {
         blk.options.forEach((opt, oi) => {
-          const cx = blk.direction === "horizontal" ? ox + oi * blk.bubbles_gap : ox + fi * blk.labels_gap;
-          const cy = blk.direction === "horizontal" ? oy + fi * blk.labels_gap : oy + oi * blk.bubbles_gap;
+          const cx =
+            blk.direction === "horizontal" ? ox + oi * blk.bubbles_gap : ox + fi * blk.labels_gap;
+          const cy =
+            blk.direction === "horizontal" ? oy + fi * blk.labels_gap : oy + oi * blk.bubbles_gap;
           const sx = cx * scale;
           const sy = cy * scale;
           const sr = Math.max(2.5, blk.bubble_radius * scale);
@@ -188,15 +353,19 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
 
           ctx.beginPath();
           ctx.arc(sx, sy, sr, 0, Math.PI * 2);
-          ctx.fillStyle = isSelected ? "rgba(29, 78, 216, 0.14)" : "rgba(15, 138, 95, 0.10)";
+          ctx.fillStyle = isSelected
+            ? "rgba(24, 73, 198, 0.14)"
+            : isHovered
+              ? "rgba(13, 122, 82, 0.16)"
+              : "rgba(13, 122, 82, 0.09)";
           ctx.fill();
           ctx.lineWidth = isSelected ? 1.6 : 1.1;
-          ctx.strokeStyle = isSelected ? "#1d4ed8" : "#0f8a5f";
+          ctx.strokeStyle = isSelected ? "#1849c6" : "#0d7a52";
           ctx.stroke();
 
           if (sr >= 6) {
-            ctx.fillStyle = isSelected ? "#1e3a8a" : "#065f46";
-            ctx.font = `${Math.max(8, Math.round(sr * 0.9))}px JetBrains Mono, monospace`;
+            ctx.fillStyle = isSelected ? "#133ba3" : "#065f46";
+            ctx.font = `${Math.max(8, Math.round(sr * 0.9))}px "IBM Plex Mono", monospace`;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
             ctx.fillText(opt, sx, sy);
@@ -205,14 +374,35 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
       });
 
       if (Number.isFinite(minX)) {
-        ctx.strokeStyle = isSelected ? "#1d4ed8" : "rgba(15, 138, 95, 0.55)";
+        const bx = minX - 5;
+        const by = minY - 5;
+        const bw = maxX - minX + 10;
+        const bh = maxY - minY + 10;
+
+        ctx.strokeStyle = isSelected
+          ? "#1849c6"
+          : isHovered
+            ? "#0d7a52"
+            : "rgba(13, 122, 82, 0.55)";
         ctx.lineWidth = isSelected ? 1.5 : 1;
         ctx.setLineDash(isSelected ? [] : [4, 3]);
-        ctx.strokeRect(minX - 5, minY - 5, maxX - minX + 10, maxY - minY + 10);
+        ctx.strokeRect(bx, by, bw, bh);
         ctx.setLineDash([]);
-        ctx.fillStyle = isSelected ? "#1d4ed8" : "#0f8a5f";
-        ctx.font = "600 10px JetBrains Mono, monospace";
+
+        // Corner calibration ticks on selected block
+        if (isSelected) {
+          ctx.fillStyle = "#1849c6";
+          const s = 4;
+          ctx.fillRect(bx - 2, by - 2, s, s);
+          ctx.fillRect(bx + bw - 2, by - 2, s, s);
+          ctx.fillRect(bx - 2, by + bh - 2, s, s);
+          ctx.fillRect(bx + bw - 2, by + bh - 2, s, s);
+        }
+
+        ctx.fillStyle = isSelected ? "#1849c6" : "#0d7a52";
+        ctx.font = '600 10px "IBM Plex Mono", monospace';
         ctx.textAlign = "left";
+        ctx.textBaseline = "alphabetic";
         ctx.fillText(blk.name, minX - 4, Math.max(12, minY - 9));
       }
     });
@@ -222,9 +412,9 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
       const ry = Math.min(dragRect.y0, dragRect.y1);
       const rw = Math.abs(dragRect.x1 - dragRect.x0);
       const rh = Math.abs(dragRect.y1 - dragRect.y0);
-      ctx.fillStyle = "rgba(29, 78, 216, 0.10)";
+      ctx.fillStyle = "rgba(24, 73, 198, 0.09)";
       ctx.fillRect(rx, ry, rw, rh);
-      ctx.strokeStyle = "#1d4ed8";
+      ctx.strokeStyle = "#1849c6";
       ctx.lineWidth = 1.5;
       ctx.setLineDash([5, 3]);
       ctx.strokeRect(rx, ry, rw, rh);
@@ -242,7 +432,99 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
     };
   }
 
+  function hitTestBlock(px: number, py: number, scale: number): number | null {
+    // Check currently selected block first for intuitive dragging
+    const order: number[] = [];
+    if (selectedIdx >= 0 && selectedIdx < template.blocks.length) {
+      order.push(selectedIdx);
+    }
+    for (let i = template.blocks.length - 1; i >= 0; i -= 1) {
+      if (i !== selectedIdx) order.push(i);
+    }
+    for (const idx of order) {
+      const bounds = computeBlockBounds(template.blocks[idx], scale);
+      if (
+        bounds &&
+        px >= bounds.minX &&
+        px <= bounds.maxX &&
+        py >= bounds.minY &&
+        py <= bounds.maxY
+      ) {
+        return idx;
+      }
+    }
+    return null;
+  }
+
+  function finalizeMove(currentMove: MoveState) {
+    const movedBlock = template.blocks[currentMove.blockIdx];
+    if (
+      movedBlock &&
+      (movedBlock.origin[0] !== currentMove.origX || movedBlock.origin[1] !== currentMove.origY)
+    ) {
+      setPast((h) => [...h.slice(-(MAX_HISTORY - 1)), currentMove.snapshot]);
+      setFuture([]);
+    }
+    setMoveState(null);
+  }
+
+  function handleMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
+    const p = canvasPoint(e);
+    const scale = getCanvasScale();
+    const hitIdx = hitTestBlock(p.x, p.y, scale);
+
+    if (hitIdx !== null) {
+      const blk = template.blocks[hitIdx];
+      setSelectedIdx(hitIdx);
+      setMoveState({
+        blockIdx: hitIdx,
+        startCanvasX: p.x,
+        startCanvasY: p.y,
+        origX: blk.origin[0],
+        origY: blk.origin[1],
+        snapshot: template,
+      });
+    } else {
+      setDragRect({ x0: p.x, y0: p.y, x1: p.x, y1: p.y });
+    }
+  }
+
+  function handleMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
+    const p = canvasPoint(e);
+    const scale = getCanvasScale();
+    setCursorPx({
+      x: Math.max(0, Math.min(template.page_width, Math.round(p.x / scale))),
+      y: Math.max(0, Math.min(template.page_height, Math.round(p.y / scale))),
+    });
+
+    if (moveState) {
+      const dx = Math.round((p.x - moveState.startCanvasX) / scale);
+      const dy = Math.round((p.y - moveState.startCanvasY) / scale);
+      const nextX = Math.max(0, Math.min(template.page_width, Math.round(moveState.origX + dx)));
+      const nextY = Math.max(0, Math.min(template.page_height, Math.round(moveState.origY + dy)));
+      setTemplate((prev) => ({
+        ...prev,
+        blocks: prev.blocks.map((b, i) =>
+          i === moveState.blockIdx ? { ...b, origin: [nextX, nextY] } : b
+        ),
+      }));
+      return;
+    }
+
+    if (dragRect) {
+      setDragRect((prev) => (prev ? { ...prev, x1: p.x, y1: p.y } : null));
+      return;
+    }
+
+    setHoverBlockIdx(hitTestBlock(p.x, p.y, scale));
+  }
+
   function handleMouseUp() {
+    if (moveState) {
+      finalizeMove(moveState);
+      return;
+    }
+
     if (!dragRect || !canvasRef.current) return;
     const w = Math.abs(dragRect.x1 - dragRect.x0);
     const h = Math.abs(dragRect.y1 - dragRect.y0);
@@ -276,7 +558,7 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
       labels: [`f${startQ}..${startQ + rows - 1}`],
     };
 
-    setTemplate((prev) => ({ ...prev, blocks: [...prev.blocks, newBlock] }));
+    commitChange((prev) => ({ ...prev, blocks: [...prev.blocks, newBlock] }));
     setSelectedIdx(template.blocks.length);
   }
 
@@ -285,12 +567,12 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
     try {
       const res = await previewUploadedDocument(file);
       setBgImageUrl(res.image_data_url);
-      setTemplate((prev) => ({
+      commitChange((prev) => ({
         ...prev,
         page_width: res.width,
         page_height: res.height,
       }));
-      setStatusMsg(`Loaded ${res.filename} (${res.width}×${res.height}px)`);
+      setStatusMsg(`${res.filename} · ${res.width}×${res.height}px`);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Failed to decode document.");
     }
@@ -302,10 +584,10 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
     try {
       const res = await autoDetectTemplateLayout(file);
       setBgImageUrl(res.image_data_url);
-      setTemplate(res.template);
+      commitChange(() => res.template);
       setSelectedIdx(0);
       setStatusMsg(
-        `Auto-detected ${res.blocks_count} bubble grids (${res.fields_count} fields, ${res.detected_bubbles} bubbles)!`
+        `${res.blocks_count} blocks · ${res.fields_count} fields · ${res.detected_bubbles} bubbles`
       );
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Auto-detect failed.");
@@ -319,16 +601,16 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
     try {
       const legacy = JSON.parse(await file.text()) as Record<string, unknown>;
       const res = await migrateLegacyTemplate(legacy, file.name.replace(/\.json$/i, ""));
-      setTemplate(res.template);
+      commitChange(() => res.template);
       setSelectedIdx(0);
-      setStatusMsg(`Migrated legacy OMRChecker template '${file.name}' to OMRKit v2.0!`);
+      setStatusMsg(`Migrated ${file.name} → OMRKit v2.0`);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Migration failed.");
     }
   }
 
   function updateBlock(patch: Partial<FieldBlock>) {
-    setTemplate((prev) => ({
+    commitChange((prev) => ({
       ...prev,
       blocks: prev.blocks.map((b, i) => (i === selectedIdx ? { ...b, ...patch } : b)),
     }));
@@ -339,7 +621,7 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
     setStatusMsg(null);
     try {
       const res = await validateTemplate(template);
-      setStatusMsg(`Valid template: ${res.blocks_count} blocks, ${res.fields_count} fields.`);
+      setStatusMsg(`OK · ${res.blocks_count} blocks · ${res.fields_count} fields`);
       onUseTemplate(template);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Validation failed.");
@@ -352,26 +634,53 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
   }
 
   const selectedBlock = template.blocks[selectedIdx] ?? null;
+  const canvasCursor = moveState
+    ? "cursor-grabbing"
+    : hoverBlockIdx !== null
+      ? "cursor-grab"
+      : "cursor-crosshair";
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-      {/* Left Interactive Canvas */}
+      {/* Left Interactive Drafting Canvas */}
       <section className="lg:col-span-8 paper-card overflow-hidden">
         <div className="px-4 py-3 border-b border-[var(--border-hairline)] flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="text-sm font-semibold">Interactive Visual Template Designer</h2>
-            <p className="text-xs text-[var(--ink-muted)]">
-              Auto-detect bubble grids on any blank form, migrate legacy OMRChecker JSON, or click-drag blocks.
-            </p>
+            <h2 className="text-sm font-semibold text-[var(--ink-primary)]">{t.designerTitle}</h2>
+            <p className="text-xs text-[var(--ink-muted)]">{t.designerSub}</p>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
+            <div className="inline-flex items-center border border-[var(--border-strong)] rounded-[5px] overflow-hidden bg-[var(--surface-card)]">
+              <button
+                type="button"
+                disabled={past.length === 0}
+                onClick={handleUndo}
+                title={`${t.undoBtn} (Ctrl+Z)`}
+                className="px-2 py-1.5 text-xs text-[var(--ink-primary)] hover:bg-[var(--surface-subtle)] disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer inline-flex items-center gap-1"
+              >
+                <Undo2 className="w-3.5 h-3.5" />
+                <span className="hidden xl:inline">{t.undoBtn}</span>
+              </button>
+              <button
+                type="button"
+                disabled={future.length === 0}
+                onClick={handleRedo}
+                title={`${t.redoBtn} (Ctrl+Shift+Z)`}
+                className="px-2 py-1.5 text-xs text-[var(--ink-primary)] border-l border-[var(--border-hairline)] hover:bg-[var(--surface-subtle)] disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer inline-flex items-center gap-1"
+              >
+                <Redo2 className="w-3.5 h-3.5" />
+                <span className="hidden xl:inline">{t.redoBtn}</span>
+              </button>
+            </div>
+
             <button
               type="button"
               disabled={detecting}
               onClick={() => autoDetectRef.current?.click()}
               className="btn-primary text-xs"
             >
-              <Wand2 className="w-3.5 h-3.5" /> {detecting ? "Detecting..." : "Auto-Detect Grids"}
+              <Crosshair className="w-3.5 h-3.5" />{" "}
+              {detecting ? t.detecting : t.autoDetectGrids}
             </button>
             <input
               ref={autoDetectRef}
@@ -389,7 +698,7 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
               onClick={() => fileRef.current?.click()}
               className="btn-secondary text-xs"
             >
-              <Upload className="w-3.5 h-3.5" /> Blank Image
+              <Upload className="w-3.5 h-3.5" /> {t.blankImage}
             </button>
             <input
               ref={fileRef}
@@ -406,9 +715,9 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
               type="button"
               onClick={() => legacyRef.current?.click()}
               className="btn-secondary text-xs"
-              title="Convert legacy OMRChecker v1 template.json"
+              title={t.migrateV1}
             >
-              <FileCode2 className="w-3.5 h-3.5" /> Migrate v1
+              <FileCode2 className="w-3.5 h-3.5" /> {t.migrateV1}
             </button>
             <input
               ref={legacyRef}
@@ -429,7 +738,7 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
               onClick={() => void handleValidateAndApply()}
               className="btn-accent text-xs"
             >
-              <Check className="w-3.5 h-3.5" /> Activate
+              <Check className="w-3.5 h-3.5" /> {t.activate}
             </button>
           </div>
         </div>
@@ -446,74 +755,98 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
           </div>
         )}
 
-        <div className="p-4 bg-[var(--surface-subtle)] flex justify-center overflow-auto max-h-[75vh]">
+        <div className="p-4 optical-stage flex justify-center overflow-auto max-h-[72vh]">
           <canvas
             ref={canvasRef}
-            onMouseDown={(e) => {
-              const p = canvasPoint(e);
-              setDragRect({ x0: p.x, y0: p.y, x1: p.x, y1: p.y });
-            }}
-            onMouseMove={(e) => {
-              if (!dragRect) return;
-              const p = canvasPoint(e);
-              setDragRect((prev) => (prev ? { ...prev, x1: p.x, y1: p.y } : null));
-            }}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={() => {
+              setCursorPx(null);
+              setHoverBlockIdx(null);
               if (dragRect) setDragRect(null);
+              if (moveState) finalizeMove(moveState);
             }}
-            className="border border-[var(--border-strong)] rounded bg-white shadow-sm cursor-crosshair max-w-full"
+            className={`border border-[var(--border-strong)] bg-white max-w-full ${canvasCursor}`}
           />
+        </div>
+
+        {/* Precision Coordinate Telemetry Footer */}
+        <div className="px-4 py-2 border-t border-[var(--border-hairline)] bg-[var(--surface-card)] flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-[var(--ink-muted)]">
+          <div className="flex items-center gap-3">
+            <span className="text-[var(--ink-primary)] tabular-nums">
+              {cursorPx ? `X:${String(cursorPx.x).padStart(4, " ")}  Y:${String(cursorPx.y).padStart(4, " ")} px` : "X:  --  Y:  -- px"}
+            </span>
+            <span className="text-[var(--border-strong)]">|</span>
+            <span>
+              {template.page_width}×{template.page_height} px
+            </span>
+            {selectedBlock && (
+              <>
+                <span className="text-[var(--border-strong)]">|</span>
+                <span className="text-[var(--accent-cobalt)]">
+                  {selectedBlock.name} @ ({Math.round(selectedBlock.origin[0])},{" "}
+                  {Math.round(selectedBlock.origin[1])})
+                </span>
+              </>
+            )}
+          </div>
+          <span className="truncate">{t.designerCanvasHint}</span>
         </div>
       </section>
 
       {/* Right Block Properties Inspector */}
       <aside className="lg:col-span-4 space-y-4">
         <section className="paper-card p-4 space-y-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-secondary)]">
-            Sheet Settings
-          </h3>
+          <h3 className="section-label">{t.sheetSettings}</h3>
           <div className="grid grid-cols-2 gap-2.5 text-xs">
             <label className="col-span-2 space-y-1">
-              <span className="text-[var(--ink-secondary)]">Template Name</span>
+              <span className="text-[var(--ink-secondary)]">{t.templateName}</span>
               <input
                 type="text"
                 className="workbench-input w-full font-mono"
                 value={template.name}
-                onChange={(e) => setTemplate((p) => ({ ...p, name: e.target.value }))}
+                onChange={(e) => commitChange((p) => ({ ...p, name: e.target.value }))}
               />
             </label>
             <label className="space-y-1">
-              <span className="text-[var(--ink-secondary)]">Width (px)</span>
+              <span className="text-[var(--ink-secondary)]">{t.widthPx}</span>
               <input
                 type="number"
                 className="workbench-input w-full font-mono"
                 value={template.page_width}
-                onChange={(e) => setTemplate((p) => ({ ...p, page_width: Number(e.target.value) || 100 }))}
+                onChange={(e) =>
+                  commitChange((p) => ({ ...p, page_width: Number(e.target.value) || 100 }))
+                }
               />
             </label>
             <label className="space-y-1">
-              <span className="text-[var(--ink-secondary)]">Height (px)</span>
+              <span className="text-[var(--ink-secondary)]">{t.heightPx}</span>
               <input
                 type="number"
                 className="workbench-input w-full font-mono"
                 value={template.page_height}
-                onChange={(e) => setTemplate((p) => ({ ...p, page_height: Number(e.target.value) || 100 }))}
+                onChange={(e) =>
+                  commitChange((p) => ({ ...p, page_height: Number(e.target.value) || 100 }))
+                }
               />
             </label>
             <label className="col-span-2 space-y-1">
-              <span className="text-[var(--ink-secondary)]">Registration Mode</span>
+              <span className="text-[var(--ink-secondary)]">{t.registrationMode}</span>
               <select
                 className="workbench-input w-full"
                 value={template.registration.mode}
                 onChange={(e) =>
-                  setTemplate((p) => ({
+                  commitChange((p) => ({
                     ...p,
-                    registration: { ...p.registration, mode: e.target.value as RegistrationMode },
+                    registration: {
+                      ...p.registration,
+                      mode: e.target.value as RegistrationMode,
+                    },
                   }))
                 }
               >
-                <option value="aruco">ArUco Markers (Auto 0/90/180/270°)</option>
+                <option value="aruco">ArUco (0/90/180/270° + 3-corner recovery)</option>
                 <option value="markers">Concentric / Custom Corner Markers</option>
                 <option value="page_quad">Page Boundary Quad</option>
                 <option value="homography">ORB Feature Homography</option>
@@ -525,8 +858,8 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
 
         <section className="paper-card p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-secondary)]">
-              Field Blocks ({template.blocks.length})
+            <h3 className="section-label">
+              {t.fieldBlocks} ({template.blocks.length})
             </h3>
             <button
               type="button"
@@ -544,12 +877,12 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
                   options: ["A", "B", "C", "D", "E"],
                   labels: [`b${idx}_1..5`],
                 };
-                setTemplate((p) => ({ ...p, blocks: [...p.blocks, b] }));
+                commitChange((p) => ({ ...p, blocks: [...p.blocks, b] }));
                 setSelectedIdx(template.blocks.length);
               }}
-              className="text-xs font-medium text-[var(--accent-cobalt)] inline-flex items-center gap-1 cursor-pointer"
+              className="text-xs font-mono font-medium text-[var(--accent-cobalt)] hover:underline inline-flex items-center gap-1 cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5" /> Add Block
+              <Plus className="w-3.5 h-3.5" /> {t.addBlock}
             </button>
           </div>
 
@@ -559,10 +892,10 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
                 key={`${b.name}-${i}`}
                 type="button"
                 onClick={() => setSelectedIdx(i)}
-                className={`px-2.5 py-1 rounded text-xs font-mono border cursor-pointer ${
+                className={`px-2 py-1 rounded-[4px] text-xs font-mono border cursor-pointer transition-colors ${
                   i === selectedIdx
                     ? "bg-[var(--ink-primary)] text-white border-[var(--ink-primary)]"
-                    : "bg-white border-[var(--border-strong)] hover:bg-[var(--surface-subtle)]"
+                    : "bg-white text-[var(--ink-primary)] border-[var(--border-strong)] hover:bg-[var(--surface-subtle)]"
                 }`}
               >
                 {b.name}
@@ -571,9 +904,9 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
           </div>
 
           {selectedBlock && (
-            <div className="grid grid-cols-2 gap-2.5 text-xs pt-2 border-t border-[var(--border-hairline)]">
+            <div className="grid grid-cols-2 gap-2.5 text-xs pt-2.5 border-t border-[var(--border-hairline)]">
               <label className="col-span-2 space-y-1">
-                <span className="text-[var(--ink-secondary)]">Block Name</span>
+                <span className="text-[var(--ink-secondary)]">{t.blockName}</span>
                 <input
                   type="text"
                   className="workbench-input w-full font-mono"
@@ -604,7 +937,7 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
                 />
               </label>
               <label className="space-y-1">
-                <span className="text-[var(--ink-secondary)]">Options Gap (px)</span>
+                <span className="text-[var(--ink-secondary)]">{t.optionsGap}</span>
                 <input
                   type="number"
                   step="0.5"
@@ -614,7 +947,7 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
                 />
               </label>
               <label className="space-y-1">
-                <span className="text-[var(--ink-secondary)]">Fields Gap (px)</span>
+                <span className="text-[var(--ink-secondary)]">{t.fieldsGap}</span>
                 <input
                   type="number"
                   step="0.5"
@@ -624,7 +957,7 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
                 />
               </label>
               <label className="space-y-1">
-                <span className="text-[var(--ink-secondary)]">Bubble Radius</span>
+                <span className="text-[var(--ink-secondary)]">{t.bubbleRadius}</span>
                 <input
                   type="number"
                   step="0.5"
@@ -634,7 +967,7 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
                 />
               </label>
               <label className="space-y-1">
-                <span className="text-[var(--ink-secondary)]">Direction</span>
+                <span className="text-[var(--ink-secondary)]">{t.direction}</span>
                 <select
                   className="workbench-input w-full"
                   value={selectedBlock.direction}
@@ -647,7 +980,7 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
                 </select>
               </label>
               <label className="col-span-2 space-y-1">
-                <span className="text-[var(--ink-secondary)]">Options (comma separated)</span>
+                <span className="text-[var(--ink-secondary)]">{t.optionsLabel}</span>
                 <input
                   type="text"
                   className="workbench-input w-full font-mono"
@@ -667,7 +1000,7 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
                 />
               </label>
               <label className="col-span-2 space-y-1">
-                <span className="text-[var(--ink-secondary)]">Labels (supports range q1..25)</span>
+                <span className="text-[var(--ink-secondary)]">{t.labelsRangeLabel}</span>
                 <input
                   type="text"
                   className="workbench-input w-full font-mono"
@@ -691,7 +1024,7 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
                 <button
                   type="button"
                   onClick={() => {
-                    setTemplate((p) => ({
+                    commitChange((p) => ({
                       ...p,
                       blocks: p.blocks.filter((_, idx) => idx !== selectedIdx),
                     }));
@@ -699,7 +1032,7 @@ export function TemplateDesigner({ activeTemplate, onUseTemplate }: TemplateDesi
                   }}
                   className="col-span-2 btn-secondary justify-center text-[var(--signal-err)] text-xs"
                 >
-                  <Trash2 className="w-3.5 h-3.5" /> Remove Selected Block
+                  <Trash2 className="w-3.5 h-3.5" /> {t.removeBlock}
                 </button>
               )}
             </div>

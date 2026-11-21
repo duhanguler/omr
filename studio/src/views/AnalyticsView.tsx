@@ -1,11 +1,21 @@
-import { useEffect, useState } from "react";
-import { Award, Download, FileSpreadsheet, FileText, Play } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Award,
+  Download,
+  FileSpreadsheet,
+  FileText,
+  Play,
+} from "lucide-react";
 import {
   exportReportFile,
   exportStudentScorecard,
   gradeSheets,
   triggerBlobDownload,
 } from "../api/client";
+import type { Dictionary } from "../i18n";
 import type {
   AnswerKey,
   GradingPolicy,
@@ -15,6 +25,7 @@ import type {
 } from "../types";
 
 interface AnalyticsViewProps {
+  t: Dictionary;
   sheets: SheetResult[];
   policies: GradingPolicy[];
   answerKey: AnswerKey | null;
@@ -23,7 +34,11 @@ interface AnalyticsViewProps {
   onReportReady: (report: GradingReport) => void;
 }
 
+type SortKey = "sheet_id" | "raw_score" | "percentage";
+type ItemFilter = "all" | "poor_discrimination" | "too_hard" | "too_easy";
+
 export function AnalyticsView({
+  t,
   sheets,
   policies,
   answerKey,
@@ -35,6 +50,10 @@ export function AnalyticsView({
     report?.policy_name ?? "standard"
   );
   const [selectedBooklet, setSelectedBooklet] = useState<string>("A");
+  const [hoveredBinIdx, setHoveredBinIdx] = useState<number | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>("percentage");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [itemFilter, setItemFilter] = useState<ItemFilter>("all");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,6 +90,62 @@ export function AnalyticsView({
       : answerKey.answers ?? {}
     : {};
   const answersEntries = Object.entries(activeAnswersMap);
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir(key === "sheet_id" ? "asc" : "desc");
+    }
+  }
+
+  const sortedGrades = useMemo(() => {
+    if (!report) return [];
+    const copy = [...report.grades];
+    copy.sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === "sheet_id") {
+        cmp = a.sheet_id.localeCompare(b.sheet_id, undefined, { numeric: true });
+      } else if (sortKey === "raw_score") {
+        cmp = a.raw_score - b.raw_score;
+      } else {
+        cmp = a.percentage - b.percentage;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return copy;
+  }, [report, sortKey, sortDir]);
+
+  const analytics = report?.analytics;
+  const maxBin = Math.max(1, ...(analytics?.histogram.map((b) => b.count) ?? [1]));
+  const totalStudents = analytics?.student_count ?? 0;
+  const hoveredBin =
+    hoveredBinIdx !== null && analytics ? analytics.histogram[hoveredBinIdx] ?? null : null;
+
+  const itemCounts = useMemo(() => {
+    const items = analytics?.items ?? [];
+    return {
+      all: items.length,
+      poor_discrimination: items.filter((i) => i.quality_flag === "poor_discrimination").length,
+      too_hard: items.filter((i) => i.difficulty_p < 0.25).length,
+      too_easy: items.filter((i) => i.difficulty_p > 0.9).length,
+    };
+  }, [analytics?.items]);
+
+  const filteredItems = useMemo(() => {
+    const items = analytics?.items ?? [];
+    if (itemFilter === "poor_discrimination") {
+      return items.filter((i) => i.quality_flag === "poor_discrimination");
+    }
+    if (itemFilter === "too_hard") {
+      return items.filter((i) => i.difficulty_p < 0.25);
+    }
+    if (itemFilter === "too_easy") {
+      return items.filter((i) => i.difficulty_p > 0.9);
+    }
+    return items;
+  }, [analytics?.items, itemFilter]);
 
   async function handleRunGrading() {
     if (!answerKey || sheets.length === 0) {
@@ -109,8 +184,14 @@ export function AnalyticsView({
     }
   }
 
-  const analytics = report?.analytics;
-  const maxBin = Math.max(1, ...(analytics?.histogram.map((b) => b.count) ?? [1]));
+  function renderSortIcon(key: SortKey) {
+    if (sortKey !== key) return <ArrowUpDown className="w-3 h-3 opacity-40" />;
+    return sortDir === "asc" ? (
+      <ArrowUp className="w-3 h-3 text-[var(--ink-primary)]" />
+    ) : (
+      <ArrowDown className="w-3 h-3 text-[var(--ink-primary)]" />
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -118,9 +199,7 @@ export function AnalyticsView({
       <section className="paper-card p-4 flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-wrap items-end gap-3">
           <label className="text-xs space-y-1">
-            <span className="block font-semibold uppercase tracking-wider text-[var(--ink-secondary)]">
-              Scoring Policy
-            </span>
+            <span className="section-label block">{t.scoringPolicy}</span>
             <select
               className="workbench-input"
               value={selectedPolicyName}
@@ -135,9 +214,7 @@ export function AnalyticsView({
           </label>
 
           <label className="text-xs space-y-1">
-            <span className="block font-semibold uppercase tracking-wider text-[var(--ink-secondary)]">
-              Upload Answer Key JSON
-            </span>
+            <span className="section-label block">{t.uploadAnswerKey}</span>
             <input
               type="file"
               accept=".json"
@@ -174,8 +251,8 @@ export function AnalyticsView({
             onClick={() => void handleRunGrading()}
             className="btn-accent"
           >
-            <Play className="w-4 h-4" />
-            {loading ? "Grading..." : `Grade ${sheets.length} Sheet${sheets.length === 1 ? "" : "s"}`}
+            <Play className="w-3.5 h-3.5 fill-current" />
+            {loading ? t.grading : `${t.gradeSheetsBtn} (${sheets.length})`}
           </button>
 
           {report && (
@@ -192,7 +269,7 @@ export function AnalyticsView({
                 onClick={() => void handleExport("xlsx")}
                 className="btn-secondary text-xs"
               >
-                <FileSpreadsheet className="w-3.5 h-3.5" /> Excel Report
+                <FileSpreadsheet className="w-3.5 h-3.5" /> {t.excelReport}
               </button>
             </>
           )}
@@ -200,7 +277,7 @@ export function AnalyticsView({
       </section>
 
       {error && (
-        <div className="p-3 rounded-lg bg-[var(--signal-err-bg)] text-[var(--signal-err)] text-xs border border-red-200">
+        <div className="p-3 rounded-[5px] bg-[var(--signal-err-bg)] text-[var(--signal-err)] text-xs font-mono border border-red-200">
           {error}
         </div>
       )}
@@ -210,8 +287,8 @@ export function AnalyticsView({
         <section className="paper-card p-4 space-y-2.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2.5">
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-secondary)]">
-                Answer Key — {answerKey.exam_name} ({answersEntries.length} questions)
+              <h2 className="section-label">
+                {t.answerKeyHeader} · {answerKey.exam_name} ({answersEntries.length})
               </h2>
               {hasBooklets && (
                 <select
@@ -228,7 +305,9 @@ export function AnalyticsView({
                 </select>
               )}
             </div>
-            <span className="text-xs text-[var(--ink-muted)]">Click any key to edit inline</span>
+            <span className="text-[11px] font-mono text-[var(--ink-muted)]">
+              {t.inlineEditHint}
+            </span>
           </div>
           <div className="grid grid-cols-5 sm:grid-cols-10 gap-1.5 max-h-40 overflow-y-auto">
             {answersEntries.map(([qid, expected]) => {
@@ -236,7 +315,7 @@ export function AnalyticsView({
               return (
                 <div
                   key={qid}
-                  className="flex items-center justify-between px-2 py-1 rounded border border-[var(--border-hairline)] bg-[var(--surface-paper)] text-xs font-mono"
+                  className="flex items-center justify-between px-2 py-1 rounded-[4px] border border-[var(--border-hairline)] bg-[var(--surface-paper)] text-xs font-mono"
                 >
                   <span className="text-[var(--ink-muted)]">{qid}</span>
                   <input
@@ -279,20 +358,30 @@ export function AnalyticsView({
         <>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             {[
-              { label: "Students Graded", val: String(analytics.student_count) },
-              { label: "Mean Score", val: `${analytics.mean_score} (${analytics.mean_percentage}%)` },
-              { label: "Median / Std", val: `${analytics.median_score} / ${analytics.std_score}` },
-              { label: "Min – Max", val: `${analytics.min_score} – ${analytics.max_score}` },
+              { label: t.studentsGraded, val: String(analytics.student_count) },
               {
-                label: "KR-20 Reliability",
-                val: analytics.kr20_reliability !== null ? analytics.kr20_reliability.toFixed(3) : "N/A",
+                label: t.meanScore,
+                val: `${analytics.mean_score} (${analytics.mean_percentage}%)`,
+              },
+              {
+                label: t.medianStd,
+                val: `${analytics.median_score} / ${analytics.std_score}`,
+              },
+              {
+                label: t.minMax,
+                val: `${analytics.min_score} – ${analytics.max_score}`,
+              },
+              {
+                label: t.kr20Reliability,
+                val:
+                  analytics.kr20_reliability !== null
+                    ? analytics.kr20_reliability.toFixed(3)
+                    : "N/A",
               },
             ].map((kpi) => (
               <div key={kpi.label} className="paper-card p-3.5">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-muted)]">
-                  {kpi.label}
-                </p>
-                <p className="text-lg font-bold font-mono text-[var(--ink-primary)] mt-1">
+                <p className="section-label">{kpi.label}</p>
+                <p className="text-lg font-bold font-mono text-[var(--ink-primary)] mt-1 tabular-nums">
                   {kpi.val}
                 </p>
               </div>
@@ -300,52 +389,104 @@ export function AnalyticsView({
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-            {/* Score Histogram */}
+            {/* Score Histogram with Hover Telemetry */}
             <section className="lg:col-span-5 paper-card p-4 space-y-3">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-secondary)]">
-                Score Distribution (%)
-              </h3>
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="section-label">{t.scoreDistribution}</h3>
+                <span className="text-[11px] font-mono text-[var(--ink-primary)] tabular-nums">
+                  {hoveredBin
+                    ? `${hoveredBin.low}–${hoveredBin.high}%: ${hoveredBin.count} (${
+                        totalStudents > 0
+                          ? Math.round((hoveredBin.count / totalStudents) * 100)
+                          : 0
+                      }%)`
+                    : `Med ${analytics.median_score}`}
+                </span>
+              </div>
               <div className="h-44 flex items-end gap-1.5 pt-4">
-                {analytics.histogram.map((bin) => (
-                  <div key={bin.label} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
-                    <span className="text-[10px] font-mono text-[var(--ink-muted)]">
-                      {bin.count > 0 ? bin.count : ""}
-                    </span>
+                {analytics.histogram.map((bin, idx) => {
+                  const isHovered = hoveredBinIdx === idx;
+                  return (
                     <div
-                      className="w-full rounded-t bg-[var(--ink-primary)] transition-all"
-                      style={{ height: `${Math.max(4, (bin.count / maxBin) * 100)}%`, opacity: bin.count > 0 ? 0.9 : 0.12 }}
-                    />
-                    <span className="text-[9px] font-mono text-[var(--ink-muted)]">
-                      {bin.low}
-                    </span>
-                  </div>
-                ))}
+                      key={bin.label}
+                      onMouseEnter={() => setHoveredBinIdx(idx)}
+                      onMouseLeave={() => setHoveredBinIdx(null)}
+                      className="flex-1 flex flex-col items-center gap-1 h-full justify-end cursor-crosshair"
+                    >
+                      <span
+                        className={`text-[10px] font-mono tabular-nums ${
+                          isHovered
+                            ? "text-[var(--accent-cobalt)] font-semibold"
+                            : "text-[var(--ink-muted)]"
+                        }`}
+                      >
+                        {bin.count > 0 ? bin.count : ""}
+                      </span>
+                      <div
+                        className={`w-full rounded-t-[2px] transition-colors ${
+                          isHovered
+                            ? "bg-[var(--accent-cobalt)]"
+                            : "bg-[var(--ink-primary)]"
+                        }`}
+                        style={{
+                          height: `${Math.max(4, (bin.count / maxBin) * 100)}%`,
+                          opacity: bin.count > 0 ? (isHovered ? 1 : 0.88) : 0.12,
+                        }}
+                      />
+                      <span className="text-[9px] font-mono text-[var(--ink-muted)] tabular-nums">
+                        {bin.low}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </section>
 
-            {/* Student Scoreboard */}
+            {/* Sortable Student Scoreboard */}
             <section className="lg:col-span-7 paper-card overflow-hidden">
               <div className="px-4 py-3 border-b border-[var(--border-hairline)] flex items-center justify-between">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-secondary)]">
-                  Student Scoreboard
-                </h3>
+                <h3 className="section-label">{t.studentScoreboard}</h3>
                 <span className="text-xs font-mono text-[var(--ink-muted)]">
-                  Policy: {report.policy_name}
+                  {report.policy_name}
                 </span>
               </div>
               <div className="overflow-x-auto max-h-60">
                 <table className="w-full text-xs text-left">
-                  <thead className="bg-[var(--surface-subtle)] text-[var(--ink-secondary)] font-mono">
+                  <thead className="bg-[var(--surface-subtle)] text-[var(--ink-secondary)] font-mono sticky top-0">
                     <tr>
-                      <th className="px-3 py-2">Sheet</th>
-                      <th className="px-3 py-2">Score</th>
-                      <th className="px-3 py-2">%</th>
+                      <th className="px-3 py-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleSort("sheet_id")}
+                          className="inline-flex items-center gap-1 hover:text-[var(--ink-primary)] cursor-pointer"
+                        >
+                          {t.colSheet} {renderSortIcon("sheet_id")}
+                        </button>
+                      </th>
+                      <th className="px-3 py-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleSort("raw_score")}
+                          className="inline-flex items-center gap-1 hover:text-[var(--ink-primary)] cursor-pointer"
+                        >
+                          {t.colScore} {renderSortIcon("raw_score")}
+                        </button>
+                      </th>
+                      <th className="px-3 py-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleSort("percentage")}
+                          className="inline-flex items-center gap-1 hover:text-[var(--ink-primary)] cursor-pointer"
+                        >
+                          % {renderSortIcon("percentage")}
+                        </button>
+                      </th>
                       <th className="px-3 py-2">+ / - / o</th>
                       <th className="px-3 py-2 text-right">PDF</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[var(--border-hairline)] font-mono">
-                    {report.grades.map((g) => (
+                  <tbody className="divide-y divide-[var(--border-hairline)] font-mono tabular-nums">
+                    {sortedGrades.map((g) => (
                       <tr key={g.sheet_id} className="hover:bg-[var(--surface-paper)]">
                         <td className="px-3 py-2 font-medium">{g.sheet_id}</td>
                         <td className="px-3 py-2 font-semibold">
@@ -363,7 +504,7 @@ export function AnalyticsView({
                             onClick={() => void handleScorecard(g)}
                             className="inline-flex items-center gap-1 text-[var(--accent-cobalt)] hover:underline cursor-pointer"
                           >
-                            <FileText className="w-3.5 h-3.5" /> Card
+                            <FileText className="w-3.5 h-3.5" /> PDF
                           </button>
                         </td>
                       </tr>
@@ -374,57 +515,148 @@ export function AnalyticsView({
             </section>
           </div>
 
-          {/* Item Psychometrics Table */}
+          {/* Item Psychometrics Table with Quality Filters & Inline Micro-Bars */}
           <section className="paper-card overflow-hidden">
-            <div className="px-4 py-3 border-b border-[var(--border-hairline)] flex items-center justify-between">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-secondary)]">
-                Classical Test Theory — Item Psychometrics
-              </h3>
-              <span className="text-xs text-[var(--ink-muted)]">
-                Difficulty (p) · Upper/Lower 27% Discrimination (D) · Distractor Frequencies
-              </span>
+            <div className="px-4 py-3 border-b border-[var(--border-hairline)] flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="section-label">{t.itemPsychometrics}</h3>
+                <p className="text-[11px] text-[var(--ink-muted)] mt-0.5">
+                  {t.itemPsychometricsSub}
+                </p>
+              </div>
+              <div className="inline-flex items-center rounded-[5px] border border-[var(--border-strong)] overflow-hidden bg-[var(--surface-card)] text-xs font-mono">
+                {(
+                  [
+                    { id: "all", label: t.filterAll, count: itemCounts.all },
+                    {
+                      id: "poor_discrimination",
+                      label: t.filterFlagged,
+                      count: itemCounts.poor_discrimination,
+                    },
+                    { id: "too_hard", label: t.filterHard, count: itemCounts.too_hard },
+                    { id: "too_easy", label: t.filterEasy, count: itemCounts.too_easy },
+                  ] as const
+                ).map((f, idx) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setItemFilter(f.id)}
+                    className={`px-2.5 py-1 inline-flex items-center gap-1 cursor-pointer transition-colors ${
+                      idx > 0 ? "border-l border-[var(--border-hairline)]" : ""
+                    } ${
+                      itemFilter === f.id
+                        ? "bg-[var(--ink-primary)] text-white"
+                        : "text-[var(--ink-secondary)] hover:bg-[var(--surface-subtle)]"
+                    }`}
+                  >
+                    <span>{f.label}</span>
+                    <span className="opacity-70">{f.count}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="overflow-x-auto max-h-80">
+
+            <div className="overflow-x-auto max-h-96">
               <table className="w-full text-xs text-left">
-                <thead className="bg-[var(--surface-subtle)] text-[var(--ink-secondary)] font-mono sticky top-0">
+                <thead className="bg-[var(--surface-subtle)] text-[var(--ink-secondary)] font-mono sticky top-0 z-10">
                   <tr>
-                    <th className="px-3 py-2">Question</th>
-                    <th className="px-3 py-2">Key</th>
-                    <th className="px-3 py-2">Difficulty (p)</th>
-                    <th className="px-3 py-2">Discrimination (D)</th>
-                    <th className="px-3 py-2">Omit %</th>
-                    <th className="px-3 py-2">Distribution</th>
-                    <th className="px-3 py-2">Quality</th>
+                    <th className="px-3 py-2">{t.colQuestion}</th>
+                    <th className="px-3 py-2">{t.colKey}</th>
+                    <th className="px-3 py-2">{t.colDifficulty}</th>
+                    <th className="px-3 py-2">{t.colDiscrimination}</th>
+                    <th className="px-3 py-2">{t.colOmit}</th>
+                    <th className="px-3 py-2 min-w-[220px]">{t.colDistribution}</th>
+                    <th className="px-3 py-2">{t.colQuality}</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[var(--border-hairline)] font-mono">
-                  {analytics.items.map((item) => (
-                    <tr key={item.question_id} className="hover:bg-[var(--surface-paper)]">
-                      <td className="px-3 py-2 font-semibold">{item.question_id}</td>
-                      <td className="px-3 py-2">{item.expected}</td>
-                      <td className="px-3 py-2">{(item.difficulty_p * 100).toFixed(0)}%</td>
-                      <td className="px-3 py-2">{item.discrimination_d.toFixed(2)}</td>
-                      <td className="px-3 py-2">{(item.omit_rate * 100).toFixed(0)}%</td>
-                      <td className="px-3 py-2 text-[11px] text-[var(--ink-secondary)]">
-                        {Object.entries(item.option_distribution)
-                          .map(([opt, c]) => `${opt}:${c}`)
-                          .join("  ")}
-                      </td>
-                      <td className="px-3 py-2">
-                        <span
-                          className={`px-1.5 py-0.5 rounded text-[10px] ${
-                            item.quality_flag === "good"
-                              ? "bg-[var(--signal-ok-bg)] text-[var(--signal-ok)]"
-                              : item.quality_flag === "poor_discrimination"
-                                ? "bg-[var(--signal-err-bg)] text-[var(--signal-err)]"
-                                : "bg-[var(--signal-warn-bg)] text-[var(--signal-warn)]"
+                <tbody className="divide-y divide-[var(--border-hairline)] font-mono tabular-nums">
+                  {filteredItems.map((item) => {
+                    const expectedKeys = new Set(
+                      item.expected
+                        .split("/")
+                        .map((k) => k.trim())
+                        .filter(Boolean)
+                    );
+                    const distEntries = Object.entries(item.option_distribution);
+                    const totalVotes = Math.max(
+                      1,
+                      distEntries.reduce((acc, [, c]) => acc + c, 0)
+                    );
+
+                    return (
+                      <tr key={item.question_id} className="hover:bg-[var(--surface-paper)]">
+                        <td className="px-3 py-2 font-semibold">{item.question_id}</td>
+                        <td className="px-3 py-2 font-semibold text-[var(--signal-ok)]">
+                          {item.expected}
+                        </td>
+                        <td className="px-3 py-2">{(item.difficulty_p * 100).toFixed(0)}%</td>
+                        <td
+                          className={`px-3 py-2 ${
+                            item.discrimination_d < 0.2
+                              ? "text-[var(--signal-err)] font-semibold"
+                              : ""
                           }`}
                         >
-                          {item.quality_flag}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                          {item.discrimination_d.toFixed(2)}
+                        </td>
+                        <td className="px-3 py-2">{(item.omit_rate * 100).toFixed(0)}%</td>
+                        <td className="px-3 py-2">
+                          <div className="space-y-1">
+                            {/* Proportional Option Distribution Micro-Bar */}
+                            <div className="h-2 w-full rounded-[2px] overflow-hidden flex bg-[var(--surface-well)]">
+                              {distEntries.map(([opt, count]) => {
+                                if (count <= 0) return null;
+                                const pct = (count / totalVotes) * 100;
+                                const isCorrect = expectedKeys.has(opt);
+                                const isBlank = opt === "" || opt === "BLANK" || opt === "_";
+                                const barColor = isCorrect
+                                  ? "bg-[#0D7A52]"
+                                  : isBlank
+                                    ? "bg-[#B6B0A2]"
+                                    : "bg-[#64748B]";
+                                return (
+                                  <div
+                                    key={opt || "blank"}
+                                    title={`${opt || "BLANK"}: ${count} (${Math.round(pct)}%)`}
+                                    className={`${barColor} h-full border-r border-white/40 last:border-r-0`}
+                                    style={{ width: `${pct}%` }}
+                                  />
+                                );
+                              })}
+                            </div>
+                            <div className="flex flex-wrap gap-x-2 text-[10px] text-[var(--ink-secondary)]">
+                              {distEntries.map(([opt, c]) => {
+                                const isCorrect = expectedKeys.has(opt);
+                                return (
+                                  <span
+                                    key={opt || "blank"}
+                                    className={
+                                      isCorrect ? "text-[var(--signal-ok)] font-semibold" : ""
+                                    }
+                                  >
+                                    {opt || "–"}:{c}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <span
+                            className={`px-1.5 py-0.5 rounded-[3px] text-[10px] ${
+                              item.quality_flag === "good"
+                                ? "bg-[var(--signal-ok-bg)] text-[var(--signal-ok)]"
+                                : item.quality_flag === "poor_discrimination"
+                                  ? "bg-[var(--signal-err-bg)] text-[var(--signal-err)]"
+                                  : "bg-[var(--signal-warn-bg)] text-[var(--signal-warn)]"
+                            }`}
+                          >
+                            {item.quality_flag}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -432,11 +664,9 @@ export function AnalyticsView({
         </>
       ) : (
         <div className="paper-card p-12 text-center space-y-2 text-[var(--ink-muted)]">
-          <Award className="w-8 h-8 mx-auto opacity-50" />
-          <p className="text-sm font-medium text-[var(--ink-secondary)]">Ready to grade</p>
-          <p className="text-xs max-w-md mx-auto">
-            Scan sheets in the Scan & Review workspace, select your scoring policy (including 4-wrong-1-right YKS/KPSS or LGS presets), and run grading for instant item psychometrics and printable PDF scorecards.
-          </p>
+          <Award className="w-7 h-7 mx-auto opacity-45" />
+          <p className="text-sm font-medium text-[var(--ink-secondary)]">{t.readyToGrade}</p>
+          <p className="text-xs max-w-md mx-auto">{t.readyToGradeSub}</p>
         </div>
       )}
     </div>

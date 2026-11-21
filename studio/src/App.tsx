@@ -3,13 +3,15 @@ import {
   BarChart3,
   Camera,
   ExternalLink,
+  Globe,
   Grid,
+  Play,
   Printer,
   ScanLine,
-  Sparkles,
   X,
 } from "lucide-react";
 import { fetchHealth, fetchPresets, loadDemoCohort, type HealthResponse } from "./api/client";
+import { DICTIONARIES, LOCALE_OPTIONS, detectInitialLocale, type Locale } from "./i18n";
 import type {
   AnswerKey,
   GradingPolicy,
@@ -28,6 +30,7 @@ import { TemplateDesigner } from "./views/TemplateDesigner";
 type ActiveTab = "scan" | "camera" | "designer" | "generator" | "analytics";
 
 export default function App() {
+  const [locale, setLocale] = useState<Locale>(detectInitialLocale);
   const [tab, setTab] = useState<ActiveTab>("scan");
   const [presets, setPresets] = useState<PresetBundle[]>([]);
   const [policies, setPolicies] = useState<GradingPolicy[]>([]);
@@ -39,6 +42,22 @@ export default function App() {
   const [demoError, setDemoError] = useState<string | null>(null);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
+
+  const t = DICTIONARIES[locale];
+
+  function handleChangeLocale(next: Locale) {
+    setLocale(next);
+    document.documentElement.lang = next;
+    try {
+      window.localStorage.setItem("omrkit_locale", next);
+    } catch {
+      // ignore storage restriction
+    }
+  }
+
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
 
   useEffect(() => {
     fetchHealth()
@@ -75,20 +94,26 @@ export default function App() {
     } catch (err) {
       setDemoError(
         err instanceof Error
-          ? `Could not load demo cohort: ${err.message}`
-          : "Could not load demo cohort. Please try again."
+          ? `Could not load sample cohort: ${err.message}`
+          : "Could not load sample cohort. Please try again."
       );
     } finally {
       setLoadingDemo(false);
     }
   }
 
-  function handleCameraCapture(sheet: SheetResult, overlayUrl?: string) {
+  function handleCameraCapture(
+    sheet: SheetResult,
+    overlayUrl?: string,
+    crops?: Record<string, string>,
+    dims?: [number, number]
+  ) {
     setScanResponse((prev) => {
       const prevSheets = prev?.sheets ?? [];
       const prevOverlays = prev?.overlays ?? {};
+      const prevCrops = prev?.review_crops ?? {};
+      const prevDims = prev?.sheet_dimensions ?? {};
       const nextSheets = [sheet, ...prevSheets];
-      const nextOverlays = overlayUrl ? { ...prevOverlays, [sheet.sheet_id]: overlayUrl } : prevOverlays;
       return {
         template_name: sheet.template_name,
         total_sheets: nextSheets.length,
@@ -96,7 +121,9 @@ export default function App() {
         failed_sheets: nextSheets.filter((s) => s.error !== null).length,
         total_elapsed_ms: (prev?.total_elapsed_ms ?? 0) + sheet.elapsed_ms,
         sheets: nextSheets,
-        overlays: nextOverlays,
+        overlays: overlayUrl ? { ...prevOverlays, [sheet.sheet_id]: overlayUrl } : prevOverlays,
+        review_crops: crops ? { ...prevCrops, [sheet.sheet_id]: crops } : prevCrops,
+        sheet_dimensions: dims ? { ...prevDims, [sheet.sheet_id]: dims } : prevDims,
       };
     });
     setGradingReport(null);
@@ -153,7 +180,6 @@ export default function App() {
         flagged_sheets: updatedSheets.filter((s) => s.review_items.length > 0).length,
       };
     });
-    // Invalidate stale grades so Grading & Analytics reflects the human override
     setGradingReport(null);
   }
 
@@ -161,34 +187,40 @@ export default function App() {
     scanResponse?.sheets.reduce((acc, s) => acc + s.review_items.length, 0) ?? 0;
 
   const navItems: { id: ActiveTab; label: string; icon: typeof ScanLine; badge?: number }[] = [
-    { id: "scan", label: "Scan & Review", icon: ScanLine, badge: totalFlags > 0 ? totalFlags : undefined },
-    { id: "camera", label: "Live Camera", icon: Camera },
-    { id: "designer", label: "Template Designer", icon: Grid },
-    { id: "generator", label: "Sheet Generator", icon: Printer },
-    { id: "analytics", label: "Grading & Analytics", icon: BarChart3 },
+    { id: "scan", label: t.navScan, icon: ScanLine, badge: totalFlags > 0 ? totalFlags : undefined },
+    { id: "camera", label: t.navCamera, icon: Camera },
+    { id: "designer", label: t.navDesigner, icon: Grid },
+    { id: "generator", label: t.navGenerator, icon: Printer },
+    { id: "analytics", label: t.navAnalytics, icon: BarChart3 },
   ];
 
   return (
     <div className="min-h-screen flex flex-col">
-      <header className="sticky top-0 z-20 bg-[var(--surface-card)]/95 backdrop-blur border-b border-[var(--border-hairline)]">
-        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 shrink-0">
-            <svg width="26" height="26" viewBox="0 0 28 28" fill="none" aria-hidden="true">
-              <rect x="2" y="2" width="24" height="24" rx="6" fill="#14181F" />
-              <circle cx="14" cy="14" r="6.5" stroke="#FAF9F6" strokeWidth="1.8" />
-              <circle cx="14" cy="14" r="2.7" fill="#0F8A5F" />
+      {/* Top Instrument Bar */}
+      <header className="sticky top-0 z-20 bg-[var(--surface-card)] border-b border-[var(--border-hairline)]">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 h-13 flex items-center justify-between gap-4">
+          {/* Geometric Optical Fiducial Mark + Title */}
+          <div className="flex items-center gap-2.5 shrink-0">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <rect x="1.5" y="1.5" width="21" height="21" rx="3" stroke="#111317" strokeWidth="1.5" />
+              <path d="M5 12H8M16 12H19M12 5V8M12 16V19" stroke="#111317" strokeWidth="1.3" />
+              <circle cx="12" cy="12" r="2.6" fill="#0D7A52" />
             </svg>
-            <div className="leading-tight">
-              <h1 className="text-sm font-bold tracking-tight text-[var(--ink-primary)]">
-                OMRKit Studio
+            <div className="leading-none">
+              <h1 className="text-[13px] font-bold tracking-tight text-[var(--ink-primary)]">
+                OMRKit
               </h1>
-              <p className="text-[11px] font-mono text-[var(--ink-muted)]">
-                v{health?.version ?? "2.1.1"} · Optical Workbench
+              <p className="text-[10px] font-mono text-[var(--ink-muted)] mt-0.5">
+                v{health?.version ?? "2.2.0"} · {t.subtitle}
               </p>
             </div>
           </div>
 
-          <nav className="flex items-center gap-1 overflow-x-auto" aria-label="Workspace navigation">
+          {/* Crisp Architectural Underline Navigation */}
+          <nav
+            className="flex items-stretch h-13 gap-1 overflow-x-auto"
+            aria-label="Workspace navigation"
+          >
             {navItems.map((item) => {
               const Icon = item.icon;
               const active = tab === item.id;
@@ -198,16 +230,16 @@ export default function App() {
                   id={`nav-${item.id}`}
                   type="button"
                   onClick={() => setTab(item.id)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+                  className={`px-3 border-b-2 text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
                     active
-                      ? "bg-[var(--ink-primary)] text-white"
-                      : "text-[var(--ink-secondary)] hover:bg-[var(--surface-subtle)] hover:text-[var(--ink-primary)]"
+                      ? "border-[var(--ink-primary)] text-[var(--ink-primary)] font-semibold"
+                      : "border-transparent text-[var(--ink-secondary)] hover:text-[var(--ink-primary)] hover:border-[var(--border-strong)]"
                   }`}
                 >
                   <Icon className="w-3.5 h-3.5" />
                   <span>{item.label}</span>
                   {item.badge !== undefined && (
-                    <span className="ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-amber-500 text-white">
+                    <span className="ml-0.5 px-1.5 py-0.5 rounded-[3px] text-[10px] leading-none font-mono bg-[var(--signal-warn-bg)] text-[var(--signal-warn)] border border-amber-300">
                       {item.badge}
                     </span>
                   )}
@@ -216,6 +248,7 @@ export default function App() {
             })}
           </nav>
 
+          {/* Right Utility Strip: Sample Loader + Locale Selector + OpenAPI */}
           <div className="flex items-center gap-2 shrink-0">
             <button
               id="try-demo-btn"
@@ -224,15 +257,32 @@ export default function App() {
               onClick={() => void handleRunDemo()}
               className="btn-secondary !py-1.5 !px-2.5 text-xs"
             >
-              <Sparkles className="w-3.5 h-3.5 text-[var(--signal-ok)]" />
-              <span>{loadingDemo ? "Loading..." : "Try Demo"}</span>
+              <Play className="w-3 h-3 fill-current text-[var(--signal-ok)]" />
+              <span>{loadingDemo ? t.loading : t.loadSample}</span>
             </button>
+
+            <label className="inline-flex items-center gap-1 px-2 py-1 rounded-[5px] border border-[var(--border-strong)] bg-[var(--surface-card)] text-xs font-mono">
+              <Globe className="w-3 h-3 text-[var(--ink-muted)]" />
+              <select
+                id="locale-select"
+                aria-label="Interface language"
+                value={locale}
+                onChange={(e) => handleChangeLocale(e.target.value as Locale)}
+                className="bg-transparent text-xs font-mono text-[var(--ink-primary)] focus:outline-none cursor-pointer"
+              >
+                {LOCALE_OPTIONS.map((opt) => (
+                  <option key={opt.code} value={opt.code}>
+                    {opt.short} · {opt.native}
+                  </option>
+                ))}
+              </select>
+            </label>
 
             <a
               href="/docs"
               target="_blank"
               rel="noreferrer"
-              className="hidden xl:inline-flex items-center gap-1 text-xs font-mono text-[var(--ink-secondary)] hover:text-[var(--ink-primary)]"
+              className="hidden xl:inline-flex items-center gap-1 px-2 py-1 text-xs font-mono text-[var(--ink-secondary)] hover:text-[var(--ink-primary)]"
             >
               API <ExternalLink className="w-3 h-3" />
             </a>
@@ -242,26 +292,29 @@ export default function App() {
 
       {health?.demo_mode && !demoBannerDismissed && (
         <div className="bg-[var(--surface-subtle)] border-b border-[var(--border-hairline)]">
-          <div className="max-w-[1440px] mx-auto px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="max-w-[1440px] mx-auto px-4 sm:px-6 py-1.5 flex flex-wrap items-center justify-between gap-2 text-xs">
             <div className="flex flex-wrap items-center gap-2 text-[var(--ink-secondary)]">
-              <span className="font-semibold text-[var(--ink-primary)]">Hosted Public Demo</span>
+              <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-primary)]">
+                {t.demoNoticeTitle}
+              </span>
+              <span className="text-[var(--border-strong)]">|</span>
               <span>
-                Upload images/PDFs (max {health.limits.max_upload_mb} MB,{" "}
-                {health.limits.max_files_per_scan} files) or explore instantly with a 5-student cohort.
+                {t.demoNoticeBody} ({health.limits.max_upload_mb} MB · {health.limits.max_files_per_scan}{" "}
+                files max)
               </span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <button
                 type="button"
                 disabled={loadingDemo}
                 onClick={() => void handleRunDemo()}
-                className="font-medium text-[var(--accent-cobalt)] hover:underline cursor-pointer"
+                className="font-mono text-xs font-medium text-[var(--accent-cobalt)] hover:underline cursor-pointer"
               >
-                Load 5-Student Demo →
+                {t.demoLoadLink} →
               </button>
               <button
                 type="button"
-                aria-label="Dismiss demo notice"
+                aria-label="Dismiss notice"
                 onClick={() => setDemoBannerDismissed(true)}
                 className="text-[var(--ink-muted)] hover:text-[var(--ink-primary)] cursor-pointer"
               >
@@ -275,7 +328,7 @@ export default function App() {
       {demoError && (
         <div className="bg-[var(--signal-err-bg)] border-b border-red-200">
           <div className="max-w-[1440px] mx-auto px-4 sm:px-6 py-2 flex items-center justify-between gap-2 text-xs text-[var(--signal-err)]">
-            <span>{demoError}</span>
+            <span className="font-mono">{demoError}</span>
             <button
               type="button"
               aria-label="Dismiss error"
@@ -291,6 +344,7 @@ export default function App() {
       <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 py-5">
         {tab === "scan" && (
           <ScanWorkspace
+            t={t}
             presets={presets}
             activeTemplate={activeTemplate}
             onSelectTemplate={(tmpl) => {
@@ -310,6 +364,7 @@ export default function App() {
 
         {tab === "camera" && (
           <CameraScanner
+            t={t}
             activeTemplate={activeTemplate}
             onSheetCaptured={handleCameraCapture}
             onGoToReview={() => setTab("scan")}
@@ -318,6 +373,7 @@ export default function App() {
 
         {tab === "designer" && (
           <TemplateDesigner
+            t={t}
             activeTemplate={activeTemplate}
             onUseTemplate={(tmpl) => {
               setActiveTemplate(tmpl);
@@ -328,6 +384,7 @@ export default function App() {
 
         {tab === "generator" && (
           <SheetGenerator
+            t={t}
             presets={presets}
             onActivateGenerated={(tmpl, key) => {
               setActiveTemplate(tmpl);
@@ -339,6 +396,7 @@ export default function App() {
 
         {tab === "analytics" && (
           <AnalyticsView
+            t={t}
             sheets={scanResponse?.sheets ?? []}
             policies={policies}
             answerKey={activeAnswerKey}
@@ -348,6 +406,40 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* Compact Hardware-Grade Telemetry Footer */}
+      <footer className="border-t border-[var(--border-hairline)] bg-[var(--surface-card)]">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 h-8 flex items-center justify-between gap-4 text-[11px] font-mono text-[var(--ink-muted)] overflow-x-auto whitespace-nowrap">
+          <div className="flex items-center gap-3">
+            <span>OMRKit v{health?.version ?? "2.2.0"}</span>
+            {activeTemplate && (
+              <>
+                <span className="text-[var(--border-strong)]">/</span>
+                <span>
+                  {activeTemplate.name} ({activeTemplate.page_width}×{activeTemplate.page_height}px ·{" "}
+                  {activeTemplate.registration.mode})
+                </span>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            {scanResponse && (
+              <span>
+                {scanResponse.total_sheets} sheets · {totalFlags} flagged ·{" "}
+                {scanResponse.total_elapsed_ms.toFixed(0)}ms
+              </span>
+            )}
+            <a
+              href="https://github.com/duhanguler/omr"
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-[var(--ink-primary)]"
+            >
+              github.com/duhanguler/omr
+            </a>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

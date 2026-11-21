@@ -1,22 +1,23 @@
 @import "tailwindcss";
 
 :root {
-  --surface-paper: #faf9f6;
+  --surface-paper: #f4f2ec;
   --surface-card: #ffffff;
-  --surface-subtle: #f3f1ec;
-  --ink-primary: #14181f;
-  --ink-secondary: #525b68;
-  --ink-muted: #7a8391;
-  --border-hairline: #e4e1d9;
-  --border-strong: #cfc9bd;
-  --accent-cobalt: #1d4ed8;
-  --accent-cobalt-hover: #1e40af;
-  --signal-ok: #0f8a5f;
-  --signal-ok-bg: #ecfdf5;
+  --surface-subtle: #ece9e0;
+  --surface-well: #e6e2d8;
+  --ink-primary: #111317;
+  --ink-secondary: #484e59;
+  --ink-muted: #707784;
+  --border-hairline: #dcd7cc;
+  --border-strong: #beb8aa;
+  --accent-cobalt: #1849c6;
+  --accent-cobalt-hover: #133ba3;
+  --signal-ok: #0d7a52;
+  --signal-ok-bg: #eaf6f1;
   --signal-warn: #b45309;
-  --signal-warn-bg: #fffbeb;
-  --signal-err: #dc2626;
-  --signal-err-bg: #fef2f2;
+  --signal-warn-bg: #fcf4e4;
+  --signal-err: #b91c1c;
+  --signal-err-bg: #fdeeee;
 }
 
 @layer base {
@@ -24,56 +25,86 @@
   body {
     background-color: var(--surface-paper);
     color: var(--ink-primary);
-    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-family:
+      "IBM Plex Sans",
+      -apple-system,
+      BlinkMacSystemFont,
+      "PingFang SC",
+      "Noto Sans CJK SC",
+      "Segoe UI",
+      sans-serif;
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
   code,
   pre,
   .font-mono {
-    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-variant-numeric: tabular-nums;
   }
 }
 
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Archival instrument panel: crisp 1px rule, architectural radius, zero blurry glow */
 .paper-card {
   background: var(--surface-card);
   border: 1px solid var(--border-hairline);
-  border-radius: 10px;
-  box-shadow: 0 1px 2px rgba(20, 24, 31, 0.04);
+  border-radius: 6px;
+  box-shadow: 0 1px 0 rgba(17, 19, 23, 0.04);
+}
+
+.instrument-well {
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-hairline);
+  border-radius: 5px;
+}
+
+.section-label {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-secondary);
 }
 
 .workbench-input {
   background: var(--surface-card);
   border: 1px solid var(--border-strong);
-  border-radius: 7px;
+  border-radius: 5px;
   color: var(--ink-primary);
-  font-size: 0.875rem;
-  padding: 0.45rem 0.65rem;
-  transition: border-color 140ms ease, box-shadow 140ms ease;
+  font-size: 0.8125rem;
+  padding: 0.4rem 0.6rem;
+  transition: border-color 120ms ease, background-color 120ms ease;
 }
 
 .workbench-input:focus {
   outline: none;
-  border-color: var(--accent-cobalt);
-  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.12);
+  border-color: var(--ink-primary);
+  box-shadow: inset 0 0 0 1px var(--ink-primary);
 }
 
 .btn-primary {
   background: var(--ink-primary);
   color: #ffffff;
-  border-radius: 7px;
+  border: 1px solid var(--ink-primary);
+  border-radius: 5px;
   font-weight: 500;
-  font-size: 0.875rem;
-  padding: 0.5rem 0.95rem;
+  font-size: 0.8125rem;
+  padding: 0.45rem 0.85rem;
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  transition: background-color 140ms ease, transform 80ms ease;
+  gap: 0.4rem;
+  transition: background-color 120ms ease, transform 70ms ease;
   cursor: pointer;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #27303d;
+  background: #232830;
 }
 
 .btn-primary:active:not(:disabled) {
@@ -81,30 +112,36 @@
 }
 
 .btn-primary:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
 .btn-accent {
   background: var(--accent-cobalt);
   color: #ffffff;
-  border-radius: 7px;
+  border: 1px solid var(--accent-cobalt);
+  border-radius: 5px;
   font-weight: 500;
-  font-size: 0.875rem;
-  padding: 0.5rem 0.95rem;
+  font-size: 0.8125rem;
+  padding: 0.45rem 0.85rem;
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  transition: background-color 140ms ease;
+  gap: 0.4rem;
+  transition: background-color 120ms ease, transform 70ms ease;
   cursor: pointer;
 }
 
 .btn-accent:hover:not(:disabled) {
   background: var(--accent-cobalt-hover);
+  border-color: var(--accent-cobalt-hover);
+}
+
+.btn-accent:active:not(:disabled) {
+  transform: translateY(0.5px);
 }
 
 .btn-accent:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
@@ -112,23 +149,53 @@
   background: var(--surface-card);
   color: var(--ink-primary);
   border: 1px solid var(--border-strong);
-  border-radius: 7px;
+  border-radius: 5px;
   font-weight: 500;
-  font-size: 0.875rem;
-  padding: 0.45rem 0.85rem;
+  font-size: 0.8125rem;
+  padding: 0.4rem 0.75rem;
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  transition: background-color 140ms ease, border-color 140ms ease;
+  gap: 0.4rem;
+  transition: background-color 120ms ease, border-color 120ms ease, transform 70ms ease;
   cursor: pointer;
 }
 
 .btn-secondary:hover:not(:disabled) {
   background: var(--surface-subtle);
-  border-color: #b7b0a2;
+  border-color: #9e9788;
+}
+
+.btn-secondary:active:not(:disabled) {
+  transform: translateY(0.5px);
 }
 
 .btn-secondary:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
+}
+
+/* Physical technical keycap indicator */
+.kbd-cap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.2rem;
+  padding: 0 0.3rem;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--ink-secondary);
+  background: var(--surface-card);
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+}
+
+/* Subtle optical viewport matting (no loud grid clutter) */
+.optical-stage {
+  background-color: var(--surface-subtle);
+  background-image: radial-gradient(rgba(17, 19, 23, 0.08) 0.75px, transparent 0.75px);
+  background-size: 16px 16px;
 }
