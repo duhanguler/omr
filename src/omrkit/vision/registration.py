@@ -228,7 +228,7 @@ def _register_aruco(image_bgr: np.ndarray, template: Template) -> RegistrationRe
 
         homography, _ = cv2.findHomography(src_12, dst_12, 0)
         if homography is not None and np.isfinite(homography).all():
-            det = float(np.linalg.det(homography))
+            det = float(np.linalg.det(np.asarray(homography, dtype=np.float64)))
             projected = cv2.perspectiveTransform(src_12.reshape(-1, 1, 2), homography).reshape(
                 -1, 2
             )
