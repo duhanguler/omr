@@ -1,8 +1,8 @@
 <div align="center">
 
-# OMRKit v2.2
+# OMRKit v2.3
 
-**Zero-calibration Optical Mark Recognition engine with 3-of-4 occluded ArUco recovery, erased-smudge resilience, photocopy drift micro-alignment, QR auto-template detection, blank-form auto-grid finder, live browser camera scanner, printable Unicode ArUco sheet generator, Classical Test Theory psychometrics, FastAPI REST API, and 6-language Web Studio.**
+**Zero-calibration Optical Mark Recognition engine with personalized class-roster mail-merge PDF + `OMRKIT:v3` student QR, Zero-JSON teacher key sheet scanning, Moodle/Canvas LMS exports, merged class PDF scorecards, 3-of-4 occluded ArUco recovery, erased-smudge resilience, photocopy micro-alignment, live camera scanner, CTT psychometrics, FastAPI REST API, and 6-language Web Studio.**
 
 [![CI](https://github.com/duhanguler/omr/actions/workflows/ci.yml/badge.svg)](https://github.com/duhanguler/omr/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/omrkit?style=flat-square&color=0D7A52&logo=pypi&logoColor=white)](https://pypi.org/project/omrkit/)
@@ -18,27 +18,27 @@
 
 </div>
 
-> **Live Web Studio:** Open **[omrkit-studio.onrender.com](https://omrkit-studio.onrender.com/)** directly in your browser (supports **EN · TR · ZH · DE · RU · ES**) — click **Sample Cohort** in the top bar to scan & grade 5 optical sheets, triage flagged bubbles with keyboard shortcuts (`A–E`, `Backspace`, `↑↓`), test **Live Camera**, or generate printable ArUco + QR sheets. *(Hosted on Render's free tier; cold start takes ~20–30s.)*
+> **Live Web Studio:** Open **[omrkit-studio.onrender.com](https://omrkit-studio.onrender.com/)** directly in your browser (supports **EN · TR · ZH · DE · RU · ES**) — click **Sample Cohort** in the top bar to scan & grade 5 optical sheets, triage flagged bubbles with keyboard shortcuts (`A–E`, `Backspace`, `↑↓`), scan a teacher answer-key sheet, or generate a personalized class roster PDF packet. *(Hosted on Render's free tier; cold start takes ~20–30s.)*
 
 ---
 
 ## Why OMRKit?
 
-Traditional open-source OMR scripts require manual pixel-editing in brittle JSON files, break on rotated photos, fail when a thumb covers a corner fiducial or an eraser leaves a faint smudge, and output unverified CSV dumps. **OMRKit v2.2** handles the full optical grading pipeline in one MIT-licensed toolkit:
+Traditional open-source OMR scripts require manual pixel-editing in brittle JSON files, break on rotated photos, fail when a thumb covers a corner fiducial or an eraser leaves a faint smudge, and output unverified CSV dumps. **OMRKit v2.3** handles the entire classroom & enterprise optical grading lifecycle in one MIT-licensed toolkit:
 
-| Capability | Legacy OMR Scripts | **OMRKit v2.2** |
+| Capability | Legacy OMR Scripts | **OMRKit v2.3** |
 | :--- | :---: | :---: |
+| **Personalized Class Roster PDF + QR v3** | Students bubble IDs by hand | **CSV Mail-Merge Multi-Page PDF + Pre-Filled ID/Booklet + `OMRKIT:v3` QR** |
+| **Zero-JSON Teacher Answer-Key Scan** | Type answers in JSON manually | **`omrkit key-from-sheet` (1–4 Booklets + Multi-Answer Support)** |
+| **LMS Gradebooks & Bulk Scorecards** | Raw CSV only | **Moodle CSV, Canvas CSV, Excel, & Merged All-Class PDF Scorecards** |
 | **Printable PDF Generator + Exact Template** | Manual JSON pixels | **1-Click Unicode Vector PDF (ArUco + QR) + Exact `template.json`** |
 | **Occluded Corner & Photocopy Drift** | Fails if 1 corner hidden or shifted | **3-of-4 ArUco 12-Point Recovery + ±6px Block Micro-Alignment** |
 | **Erased Pencil Smudges vs. Double Marks** | False multi-mark flags | **Darkness-Dominance Filter (Rejects Smudges, Catches Double Marks)** |
-| **Zero-Template QR Auto-Scanning** | Must pass template manually | **`omrkit scan sheet.jpg` auto-detects template from QR** |
+| **Zero-Template QR Auto-Scanning & ADF Watch** | Must pass template manually | **`omrkit scan` QR Auto-Detect + `omrkit watch` Live Scanner Inbox** |
 | **Auto-Detect Grids on Blank Forms** | Measure pixels by hand | **Auto-Deskew (±12°) `omrkit detect-layout` + Interactive Canvas** |
 | **Live Webcam / Mobile Browser Scanner** | Static files only | **Real-Time `getUserMedia` Viewfinder with Auto-Lock** |
-| **Multi-Page PDF & EXIF Orientation** | Single images only | **Native `pypdfium2` + EXIF Auto-Orient** |
-| **Checkmarks (✓), Crosses (✗) & Shadows** | Global intensity only | **Illumination Normalization + Hybrid Fill/Ring/Ink Classifier** |
 | **Confidence & Keyboard HITL Review** | Silent errors in CSV | **Calibrated `0–1` Confidence + Zoomed Bubble Crops + `A–E` Triage** |
-| **Exam Psychometrics & Scorecards** | Basic score sum | **CTT Difficulty ($p$), Discrimination ($D$), KR-20, Excel & Unicode PDF Cards** |
-| **Legacy `OMRChecker` v1 Migration** | Manual rewrite | **`omrkit migrate-template old.json -o new.json`** |
+| **Exam Psychometrics (CTT)** | Basic score sum | **Difficulty ($p$), Discrimination ($D$), KR-20 & Option Micro-Bars** |
 
 ---
 
@@ -54,7 +54,7 @@ Traditional open-source OMR scripts require manual pixel-editing in brittle JSON
     <td width="46%" align="center">
       <img src="https://raw.githubusercontent.com/duhanguler/omr/main/docs/assets/generated_sheet_preview.jpg" alt="OMRKit generated ArUco + QR optical answer sheet" />
       <br />
-      <sub><b>Zero-calibration generated PDF:</b> Vector A4/Letter layout with native Unicode typography, ArUco corners [0,1,2,3], QR badge, and companion <code>template.json</code>.</sub>
+      <sub><b>Zero-calibration generated PDF:</b> Vector A4/Letter layout with native Unicode typography, ArUco corners [0,1,2,3], QR v2/v3 badge, and companion <code>template.json</code>.</sub>
     </td>
   </tr>
 </table>
@@ -77,11 +77,14 @@ docker run -p 8000:8000 ghcr.io/duhanguler/omr:latest
 - **Live Public Demo:** [https://omrkit-studio.onrender.com/](https://omrkit-studio.onrender.com/) (OpenAPI docs at [`/docs`](https://omrkit-studio.onrender.com/docs))
 - **Self-Host (1-Click Render Blueprint):** [![Deploy to Render](https://img.shields.io/badge/Deploy_to-Render-111317?style=flat-square&logo=render)](https://dashboard.render.com/blueprint/new?repo=https://github.com/duhanguler/omr) · See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for GHCR & cloud deployment details.
 
-### 2. Generate a Print-Ready ArUco + QR Sheet
+### 2. Generate Print-Ready ArUco + QR Sheets (Blank or Personalized Class Roster Packet)
 
 ```bash
+# Blank sheet + exact template.json + sample answer_key.json:
 omrkit generate --preset standard_mcq_40 -o my_exam
-# Writes: standard_mcq_40_sheet.pdf, template.json, answer_key.json
+
+# Personalized multi-page class packet from a CSV roster (student names + QR v3 + pre-filled IDs):
+omrkit generate --preset standard_mcq_40 --roster class_list.csv -o my_class_exam
 ```
 
 Built-in presets (`omrkit generate --list`):
@@ -90,19 +93,21 @@ Built-in presets (`omrkit generate --list`):
 - `turkish_exam_50` — 50 questions (A–E), native Turkish Unicode headings, 6-digit Sınav Kodu, 11-digit **TC Kimlik No** (checksum validated), Booklet
 - `turkish_yks_120` — 120-question YKS / TYT layout (4 columns × 30 rows)
 
-### 3. Scan Images or Multi-Page PDFs (Explicit or Zero-Template QR Auto-Scan)
+### 3. Scan Teacher Answer Key, Student Sheets, LMS Gradebooks & ADF Inbox
 
 ```bash
-# Zero-template QR auto-detection on generated sheets:
-omrkit scan examples/standard_mcq_40q/scans -o outputs/auto_demo
+# Zero-JSON: extract single- or multi-booklet answer key directly from teacher's filled key sheet(s):
+omrkit key-from-sheet teacher_keys/ -o answer_key.json
 
-# Explicit template + YKS/TYT negative marking + Excel & PDF scorecards:
+# Zero-template QR auto-scan + YKS/TYT grading + Moodle, Canvas, Excel & Merged Class PDF Scorecards:
 omrkit scan examples/standard_mcq_40q/scans \
-  -t examples/standard_mcq_40q/template.json \
   -k examples/standard_mcq_40q/answer_key.json \
   --policy yks_tyt \
-  --format csv,json,xlsx,scorecards \
+  --format csv,json,xlsx,moodle,canvas,scorecards_pdf \
   -o outputs/demo
+
+# Live ADF scanner folder watcher (processes incoming scans continuously):
+omrkit watch ./scanner_inbox -k answer_key.json -o outputs/live
 
 # Auto-detect bubble grids from ANY blank form (with automatic ±12° deskew):
 omrkit detect-layout examples/turkish_exam_50q/blank_form.jpg -o auto_template.json
@@ -204,10 +209,10 @@ OMRKit Studio ships pre-bundled inside the Python package in **6 languages (`EN 
 
 ### REST API Endpoints
 - `GET /api/health` · `GET /api/presets`
-- `POST /api/generate` · `POST /api/generate/bundle`
+- `POST /api/generate` · `POST /api/generate/bundle` · `POST /api/generate/roster-packet`
 - `POST /api/templates/validate` · `POST /api/templates/auto-detect` · `POST /api/templates/migrate` · `POST /api/preview-image`
-- `POST /api/scan` *(supports `template_json="auto"`, returns `overlays`, `review_crops`, `sheet_dimensions`)* · `POST /api/demo/cohort` · `POST /api/grade`
-- `POST /api/export/csv` · `POST /api/export/xlsx` · `POST /api/export/scorecard`
+- `POST /api/scan` *(supports `template_json="auto"`, decodes QR v3 student metadata, returns `overlays`, `review_crops`, `sheet_dimensions`)* · `POST /api/answer-key/from-sheet` · `POST /api/demo/cohort` · `POST /api/grade`
+- `POST /api/export/csv` · `POST /api/export/xlsx` · `POST /api/export/moodle` · `POST /api/export/canvas` · `POST /api/export/scorecard` · `POST /api/export/scorecards-pdf`
 
 ---
 

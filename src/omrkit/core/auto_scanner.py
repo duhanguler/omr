@@ -1,4 +1,4 @@
-"""Zero-template automatic scanning via embedded QR template discovery."""
+"""Zero-template automatic scanning via embedded QR template + student metadata discovery."""
 
 from __future__ import annotations
 
@@ -7,13 +7,13 @@ from pathlib import Path
 
 import numpy as np
 
-from omrkit.core.scanner import OMRScanner
+from omrkit.core.scanner import OMRScanner, inject_qr_student_metadata
 from omrkit.generator.pdf_sheet import SheetGenerator
 from omrkit.generator.presets import get_sheet_presets
 from omrkit.io.loader import LoadedPage, load_bytes, load_document
 from omrkit.models.scan import SheetResult
 from omrkit.models.template import Template
-from omrkit.vision.qr import detect_sheet_qr
+from omrkit.vision.qr import SheetQRPayload, detect_sheet_qr_payload
 from omrkit.vision.registration import RegistrationError, register_sheet
 
 
@@ -23,22 +23,18 @@ def _builtin_preset_templates() -> dict[str, Template]:
     return {pid: gen.generate(spec).template for pid, spec in get_sheet_presets().items()}
 
 
-def resolve_template_for_image(
+def resolve_template_payload_for_image(
     image_bgr: np.ndarray,
     extra_templates: dict[str, Template] | None = None,
-) -> tuple[Template, str] | None:
-    """Detect an OMRKit sheet's embedded QR template ID and resolve its matching Template.
-
-    Falls back to ArUco perspective rectification first if severe skew/rotation prevents
-    direct QR reading on the raw photo.
-    """
+) -> tuple[Template, SheetQRPayload] | None:
+    """Detect an OMRKit v2/v3 QR badge and resolve its matching Template + SheetQRPayload."""
     registry: dict[str, Template] = dict(_builtin_preset_templates())
     if extra_templates:
         registry.update(extra_templates)
 
-    preset_id = detect_sheet_qr(image_bgr)
-    if preset_id and preset_id in registry:
-        return registry[preset_id], preset_id
+    payload = detect_sheet_qr_payload(image_bgr)
+    if payload is not None and payload.preset_id in registry:
+        return registry[payload.preset_id], payload
 
     # Fallback: use standard A4 ArUco corner rectification to flatten perspective, then read QR
     fallback_template = registry.get("standard_mcq_40")
@@ -49,13 +45,25 @@ def resolve_template_for_image(
             # Try upper-right header ROI first (fast & zoomed) then full rectified image
             qr_roi = reg.warped_bgr[0 : round(wh * 0.22), round(ww * 0.65) : ww]
             for view in (qr_roi, reg.warped_bgr):
-                preset_id = detect_sheet_qr(view)
-                if preset_id and preset_id in registry:
-                    return registry[preset_id], preset_id
+                payload = detect_sheet_qr_payload(view)
+                if payload is not None and payload.preset_id in registry:
+                    return registry[payload.preset_id], payload
         except RegistrationError:
             pass
 
     return None
+
+
+def resolve_template_for_image(
+    image_bgr: np.ndarray,
+    extra_templates: dict[str, Template] | None = None,
+) -> tuple[Template, str] | None:
+    """Detect an OMRKit sheet's embedded QR template ID and resolve its matching Template."""
+    resolved = resolve_template_payload_for_image(image_bgr, extra_templates=extra_templates)
+    if resolved is None:
+        return None
+    template, payload = resolved
+    return template, payload.preset_id
 
 
 def scan_page_auto(
@@ -63,8 +71,8 @@ def scan_page_auto(
     extra_templates: dict[str, Template] | None = None,
     save_overlay_dir: str | Path | None = None,
 ) -> tuple[SheetResult, np.ndarray | None]:
-    """Automatically identify a page's template via QR code and scan it."""
-    resolved = resolve_template_for_image(page.image_bgr, extra_templates=extra_templates)
+    """Automatically identify a page's template (and v3 student metadata) via QR and scan it."""
+    resolved = resolve_template_payload_for_image(page.image_bgr, extra_templates=extra_templates)
     if resolved is None:
         stem = Path(page.source_name).stem
         sheet_id = f"{stem}_p{page.page_index + 1}" if page.page_index > 0 else stem
@@ -85,8 +93,11 @@ def scan_page_auto(
             None,
         )
 
-    template, _ = resolved
-    return OMRScanner(template).scan_page(page, save_overlay_dir=save_overlay_dir)
+    template, payload = resolved
+    result, warped = OMRScanner(template).scan_page(page, save_overlay_dir=save_overlay_dir)
+    if result.error is None and payload.has_student_metadata:
+        inject_qr_student_metadata(result, payload)
+    return result, warped
 
 
 def scan_image_auto(

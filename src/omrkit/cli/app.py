@@ -7,7 +7,7 @@ import json
 import math
 import os
 from pathlib import Path
-from time import perf_counter
+from time import perf_counter, sleep
 from typing import Annotated
 
 import typer
@@ -22,8 +22,18 @@ from omrkit.core.migrator import migrate_legacy_template_file
 from omrkit.core.scanner import OMRScanner, ensure_unique_sheet_ids
 from omrkit.generator.pdf_sheet import SheetGenerator
 from omrkit.generator.presets import SheetSpec, get_sheet_preset, get_sheet_presets
+from omrkit.generator.roster import parse_roster_file
 from omrkit.grading.grader import ExamGrader
-from omrkit.io.exporters import export_csv, export_excel, export_json, export_pdf_scorecard
+from omrkit.grading.key_extractor import extract_answer_key_from_sheets
+from omrkit.io.exporters import (
+    export_canvas_csv,
+    export_csv,
+    export_excel,
+    export_json,
+    export_merged_scorecards_pdf,
+    export_moodle_csv,
+    export_pdf_scorecard,
+)
 from omrkit.io.loader import discover_documents, load_document, strip_exif_and_save
 from omrkit.models.grading import AnswerKey, GradingPolicy
 from omrkit.models.scan import BatchResult, SheetResult
@@ -71,7 +81,10 @@ def scan(
     ] = "standard",
     formats: Annotated[
         str,
-        typer.Option("--format", help="Comma-separated export formats: csv,json,xlsx,scorecards."),
+        typer.Option(
+            "--format",
+            help="Comma-separated formats: csv,json,xlsx,moodle,canvas,scorecards,scorecards_pdf.",
+        ),
     ] = "csv,json",
     overlay: Annotated[
         bool,
@@ -159,6 +172,10 @@ def scan(
         exported.append(str(export_json(batch.sheets, output / "results.json", report=report)))
     if "xlsx" in fmt_set:
         exported.append(str(export_excel(batch.sheets, output / "report.xlsx", report=report)))
+    if "moodle" in fmt_set and report is not None:
+        exported.append(str(export_moodle_csv(report, output / "moodle_grades.csv")))
+    if "canvas" in fmt_set and report is not None:
+        exported.append(str(export_canvas_csv(report, output / "canvas_grades.csv")))
     if "scorecards" in fmt_set and report is not None:
         sc_dir = output / "scorecards"
         for g in report.grades:
@@ -166,6 +183,8 @@ def scan(
                 g, sc_dir / f"{g.sheet_id}_scorecard.pdf", exam_name=report.exam_name
             )
         exported.append(str(sc_dir))
+    if "scorecards_pdf" in fmt_set and report is not None:
+        exported.append(str(export_merged_scorecards_pdf(report, output / "class_scorecards.pdf")))
 
     table = Table(title="OMRKit Scan Summary", show_header=False)
     table.add_column("Metric", style="cyan", no_wrap=True)
@@ -209,12 +228,26 @@ def generate(
         int | None,
         typer.Option("--questions", "-q", help="Override number of questions (5-120)."),
     ] = None,
+    roster: Annotated[
+        Path | None,
+        typer.Option(
+            "--roster",
+            help="Optional class roster CSV to generate a personalized multi-page PDF packet with QR v3.",
+        ),
+    ] = None,
+    pre_fill_id: Annotated[
+        bool,
+        typer.Option(
+            "--pre-fill-id/--no-pre-fill-id",
+            help="Pre-fill Student ID and Booklet bubbles when generating a roster packet.",
+        ),
+    ] = True,
     list_presets: Annotated[
         bool,
         typer.Option("--list", help="List available built-in optical sheet presets."),
     ] = False,
 ) -> None:
-    """Generate a print-ready ArUco + QR PDF optical sheet + pixel-exact matching template.json."""
+    """Generate a print-ready ArUco + QR PDF optical sheet (or personalized class roster packet)."""
     if list_presets:
         table = Table(title="Built-in Optical Sheet Presets")
         table.add_column("Preset ID", style="cyan")
@@ -237,10 +270,175 @@ def generate(
             base["questions_per_column"] = min(30, min_rows)
     spec = SheetSpec.model_validate(base)
 
-    paths = SheetGenerator().generate_to_dir(spec, output)
-    console.print(f"[green]Generated optical sheet bundle in '{output}':[/green]")
+    students = parse_roster_file(roster) if roster is not None else None
+    paths = SheetGenerator().generate_to_dir(
+        spec, output, students=students, pre_fill_id=pre_fill_id
+    )
+    if students:
+        console.print(
+            f"[green]Generated personalized roster packet for {len(students)} student(s) "
+            f"in '{output}':[/green]"
+        )
+    else:
+        console.print(f"[green]Generated optical sheet bundle in '{output}':[/green]")
     for key, p in paths.items():
         console.print(f"  - [bold]{key}[/bold]: {p}")
+
+
+@app.command("key-from-sheet")
+def key_from_sheet(
+    input_path: Annotated[
+        Path,
+        typer.Argument(help="Teacher answer-key sheet image, PDF, or folder (1-4 booklets)."),
+    ],
+    template: Annotated[
+        Path | None,
+        typer.Option(
+            "-t",
+            "--template",
+            help="Path to template.json/.yaml. Omit to auto-detect template from embedded sheet QR code.",
+        ),
+    ] = None,
+    output: Annotated[
+        Path,
+        typer.Option("-o", "--output", help="Output path for extracted answer_key.json."),
+    ] = Path("answer_key.json"),
+    exam_name: Annotated[
+        str,
+        typer.Option("--exam-name", help="Exam title recorded in the extracted AnswerKey."),
+    ] = "Scanned Answer Key",
+    dpi: Annotated[int, typer.Option("--dpi", help="PDF rasterization DPI.")] = 200,
+) -> None:
+    """Extract a single- or multi-booklet AnswerKey directly from scanned teacher key sheet(s)."""
+    tmpl = Template.from_file(template) if template is not None else None
+    files = discover_documents(input_path)
+    sheets: list[SheetResult] = []
+    if tmpl is not None:
+        scanner = OMRScanner(tmpl, dpi=dpi)
+        for f in files:
+            sheets.extend(scanner.scan_file(f))
+    else:
+        for f in files:
+            sheets.extend(scan_file_auto(f, dpi=dpi))
+
+    extracted = extract_answer_key_from_sheets(sheets, template=tmpl, exam_name=exam_name)
+    saved = extracted.answer_key.to_file(output)
+    console.print(
+        f"[green]Extracted AnswerKey[/green] -> [bold]{saved}[/bold] "
+        f"({extracted.questions_count} questions, booklets={','.join(extracted.booklets_detected)})"
+    )
+    for warn in extracted.warnings:
+        console.print(f"  [yellow]Warning:[/yellow] {warn}")
+
+
+@app.command()
+def watch(
+    watch_dir: Annotated[
+        Path,
+        typer.Argument(
+            help="Directory to watch for incoming scanned sheets (e.g. ADF scanner inbox)."
+        ),
+    ],
+    template: Annotated[
+        Path | None,
+        typer.Option(
+            "-t",
+            "--template",
+            help="Path to template.json/.yaml. Omit to auto-detect via QR.",
+        ),
+    ] = None,
+    output: Annotated[
+        Path,
+        typer.Option(
+            "-o", "--output", help="Output directory updated continuously with CSV/JSON/overlays."
+        ),
+    ] = Path("watch_outputs"),
+    answer_key: Annotated[
+        Path | None,
+        typer.Option("-k", "--answer-key", help="Optional answer_key.json for live grading."),
+    ] = None,
+    policy: Annotated[
+        str,
+        typer.Option("--policy", help="Grading preset when --answer-key is provided."),
+    ] = "standard",
+    interval: Annotated[
+        float,
+        typer.Option("--interval", help="Polling interval in seconds."),
+    ] = 1.5,
+    dpi: Annotated[int, typer.Option("--dpi", help="PDF rasterization DPI.")] = 200,
+    max_cycles: Annotated[
+        int | None,
+        typer.Option(
+            "--max-cycles", hidden=True, help="Optional finite poll cycles (for testing)."
+        ),
+    ] = None,
+) -> None:
+    """Continuously watch a folder for newly scanned sheets and export results automatically."""
+    watch_dir.mkdir(parents=True, exist_ok=True)
+    output.mkdir(parents=True, exist_ok=True)
+    overlay_dir = output / "overlays"
+
+    tmpl = Template.from_file(template) if template is not None else None
+    scanner = OMRScanner(tmpl, dpi=dpi) if tmpl is not None else None
+    grader = (
+        ExamGrader(AnswerKey.from_file(answer_key), GradingPolicy.preset(policy))
+        if answer_key is not None
+        else None
+    )
+
+    seen_files: dict[Path, tuple[int, int]] = {}
+    all_sheets: list[SheetResult] = []
+    console.print(
+        f"[bold cyan]Watching[/bold cyan] '{watch_dir}' -> '{output}' "
+        f"(template={'auto QR' if tmpl is None else tmpl.name}, Ctrl+C to stop)..."
+    )
+
+    cycles = 0
+    try:
+        while max_cycles is None or cycles < max_cycles:
+            cycles += 1
+            discovered = discover_documents(watch_dir)
+            new_results: list[SheetResult] = []
+            for fpath in discovered:
+                try:
+                    st = fpath.stat()
+                except OSError:
+                    continue
+                sig = (st.st_size, st.st_mtime_ns)
+                if st.st_size == 0 or seen_files.get(fpath) == sig:
+                    continue
+                seen_files[fpath] = sig
+                if scanner is not None:
+                    res_list = scanner.scan_file(fpath, save_overlay_dir=overlay_dir)
+                else:
+                    res_list = scan_file_auto(fpath, dpi=dpi, save_overlay_dir=overlay_dir)
+                new_results.extend(res_list)
+
+            if new_results:
+                all_sheets.extend(new_results)
+                ensure_unique_sheet_ids(all_sheets)
+                report = grader.grade_batch(all_sheets) if grader is not None else None
+                export_csv(all_sheets, output / "results.csv", report=report)
+                export_json(all_sheets, output / "results.json", report=report)
+                if report is not None:
+                    export_moodle_csv(report, output / "moodle_grades.csv")
+                    export_canvas_csv(report, output / "canvas_grades.csv")
+                for res in new_results:
+                    status = (
+                        "[red]ERROR[/red]"
+                        if res.error
+                        else f"[green]{res.overall_confidence:.0%}[/green]"
+                    )
+                    console.print(
+                        f"  Processed [bold]{res.sheet_id}[/bold] ({res.source_file}) — "
+                        f"conf={status}, flags={len(res.review_items)}"
+                    )
+
+            if max_cycles is not None and cycles >= max_cycles:
+                break
+            sleep(max(0.1, interval))
+    except KeyboardInterrupt:
+        console.print(f"\n[cyan]Stopped watcher after scanning {len(all_sheets)} sheet(s).[/cyan]")
 
 
 @app.command("detect-layout")

@@ -1,4 +1,4 @@
-"""Vector PDF optical sheet generator with ArUco anchors and zero-calibration Template output."""
+"""Vector PDF optical sheet generator with ArUco anchors, QR v2/v3, and roster mail-merge."""
 
 from __future__ import annotations
 
@@ -14,8 +14,9 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas as rl_canvas
 
 from omrkit._version import __version__
-from omrkit.generator.presets import SheetSpec
-from omrkit.io.pdf_fonts import get_pdf_fonts
+from omrkit.generator.presets import IdGridSpec, SheetSpec
+from omrkit.generator.roster import StudentRosterEntry
+from omrkit.io.pdf_fonts import PdfFontPair, get_pdf_fonts
 from omrkit.models.grading import AnswerKey
 from omrkit.models.template import (
     DetectionConfig,
@@ -54,8 +55,7 @@ def _aruco_image_reader(marker_id: int, pixel_size: int = 240) -> ImageReader:
     return ImageReader(buf)
 
 
-def _qr_image_reader(preset_id: str, pixel_size: int = 220) -> ImageReader:
-    payload = encode_sheet_qr_payload(preset_id)
+def _qr_image_reader(payload: str, pixel_size: int = 280) -> ImageReader:
     qr_img = render_qr_matrix(payload, pixel_size=pixel_size)
     pil_img = Image.fromarray(qr_img).convert("L")
     buf = io.BytesIO()
@@ -64,11 +64,49 @@ def _qr_image_reader(preset_id: str, pixel_size: int = 220) -> ImageReader:
     return ImageReader(buf)
 
 
+def _match_student_id_grid(grids: list[IdGridSpec], student_id: str) -> str | None:
+    """Choose which ID grid should receive pre-filled student_id bubbles."""
+    if not grids or not student_id.strip():
+        return None
+    digits_only = "".join(ch for ch in student_id if ch.isdigit())
+    if not digits_only:
+        return None
+    # Prefer an explicit student/TC grid whose digit count fits
+    preferred_names = ("STUDENT_ID", "OGRENCI_NO", "TC_KIMLIK_NO")
+    for grid in grids:
+        if grid.name in preferred_names and len(digits_only) == grid.digits:
+            return grid.name
+    for grid in grids:
+        if grid.name in preferred_names:
+            return grid.name
+    return grids[0].name
+
+
 class SheetGenerator:
     """Generates print-ready vector PDF OMR sheets alongside mathematically exact Templates."""
 
     def generate(self, spec: SheetSpec) -> GeneratedSheet:
-        """Render the PDF in memory and construct its zero-calibration Template."""
+        """Render a single blank PDF sheet in memory and construct its zero-calibration Template."""
+        return self._build_pdf(spec, students=[None], pre_fill_id=False)
+
+    def generate_roster_packet(
+        self,
+        spec: SheetSpec,
+        students: list[StudentRosterEntry],
+        *,
+        pre_fill_id: bool = True,
+    ) -> GeneratedSheet:
+        """Render a personalized multi-page class exam PDF packet with OMRKIT:v3 student QR badges."""
+        if not students:
+            raise ValueError("Roster must contain at least one student.")
+        return self._build_pdf(spec, students=list(students), pre_fill_id=pre_fill_id)
+
+    def _build_pdf(
+        self,
+        spec: SheetSpec,
+        students: list[StudentRosterEntry | None],
+        pre_fill_id: bool,
+    ) -> GeneratedSheet:
         fonts = get_pdf_fonts()
         page_w_mm, page_h_mm = _PAGE_DIMENSIONS_MM[spec.page_format]
         dpi = spec.dpi
@@ -82,6 +120,88 @@ class SheetGenerator:
         pdf = rl_canvas.Canvas(buf, pagesize=(page_w_pt, page_h_pt))
         pdf.setTitle(fonts.format_text(spec.title))
         pdf.setAuthor(f"OMRKit v{__version__}")
+
+        # Pre-generate ArUco readers once across multi-page roster packets
+        aruco_readers = [_aruco_image_reader(i) for i in range(4)]
+
+        blocks: list[FieldBlock] = []
+        target_corners_px: list[tuple[float, float]] = []
+        sample_answers: dict[str, str | list[str]] = {}
+
+        for page_idx, student in enumerate(students):
+            page_blocks, page_corners, page_answers = self._render_page(
+                pdf=pdf,
+                spec=spec,
+                fonts=fonts,
+                aruco_readers=aruco_readers,
+                page_w_mm=page_w_mm,
+                page_h_mm=page_h_mm,
+                page_w_px=page_w_px,
+                page_h_px=page_h_px,
+                mm_to_px=mm_to_px,
+                student=student,
+                pre_fill_id=pre_fill_id,
+            )
+            if page_idx == 0:
+                blocks = page_blocks
+                target_corners_px = page_corners
+                sample_answers = page_answers
+            pdf.showPage()
+
+        pdf.save()
+
+        template = Template(
+            version="2.0",
+            name=spec.preset_id,
+            description=spec.title,
+            page_width=page_w_px,
+            page_height=page_h_px,
+            registration=RegistrationConfig(
+                mode="aruco",
+                aruco_dict="DICT_4X4_50",
+                aruco_ids=(0, 1, 2, 3),
+                target_corners=target_corners_px,
+            ),
+            detection=DetectionConfig(),
+            blocks=blocks,
+            metadata={
+                "generated_by": "omrkit.SheetGenerator",
+                "page_format": spec.page_format,
+                "dpi": dpi,
+                "num_questions": spec.num_questions,
+            },
+        )
+
+        answer_key = AnswerKey(
+            exam_name=spec.title,
+            booklet_field="BOOKLET" if spec.include_booklet else None,
+            default_booklet="A",
+            answers=sample_answers,
+        )
+
+        return GeneratedSheet(
+            pdf_bytes=buf.getvalue(),
+            template=template,
+            sample_answer_key=answer_key,
+        )
+
+    def _render_page(
+        self,
+        *,
+        pdf: rl_canvas.Canvas,
+        spec: SheetSpec,
+        fonts: PdfFontPair,
+        aruco_readers: list[ImageReader],
+        page_w_mm: float,
+        page_h_mm: float,
+        page_w_px: int,
+        page_h_px: int,
+        mm_to_px: float,
+        student: StudentRosterEntry | None,
+        pre_fill_id: bool,
+    ) -> tuple[list[FieldBlock], list[tuple[float, float]], dict[str, str | list[str]]]:
+        page_w_pt = page_w_mm * _MM_TO_PT
+        page_h_pt = page_h_mm * _MM_TO_PT
 
         def x_pt(x_mm: float) -> float:
             return x_mm * _MM_TO_PT
@@ -99,10 +219,9 @@ class SheetGenerator:
             (margin_mm, page_h_mm - margin_mm),  # BL (ID 3)
         ]
         for marker_id, (mx, my) in enumerate(corner_centers_mm):
-            reader = _aruco_image_reader(marker_id)
             half = marker_draw_mm / 2.0
             pdf.drawImage(
-                reader,
+                aruco_readers[marker_id],
                 x_pt(mx - half),
                 y_pt(my + half),
                 width=marker_draw_mm * _MM_TO_PT,
@@ -128,12 +247,27 @@ class SheetGenerator:
         pdf.setFont(fonts.regular, 8.5)
         pdf.drawCentredString(page_w_pt / 2.0, y_pt(18.5), fonts.format_text(spec.subtitle))
 
-        # Name / Date box + embedded auto-detect QR template identifier
-        qr_size_mm = 15.0
-        qr_left_mm = page_w_mm - 41.0
-        qr_top_mm = 20.0
+        # Name / Date box + embedded auto-detect QR badge (v2 blank or v3 personalized student)
+        if student is not None:
+            qr_payload = encode_sheet_qr_payload(
+                spec.preset_id,
+                student_id=student.student_id,
+                student_name=student.name,
+                classroom=student.classroom,
+                booklet=student.booklet,
+                email=student.email,
+            )
+            qr_size_mm = 16.2
+            qr_left_mm = page_w_mm - 41.5
+            qr_top_mm = 19.6
+        else:
+            qr_payload = encode_sheet_qr_payload(spec.preset_id)
+            qr_size_mm = 15.0
+            qr_left_mm = page_w_mm - 41.0
+            qr_top_mm = 20.0
+
         pdf.drawImage(
-            _qr_image_reader(spec.preset_id),
+            _qr_image_reader(qr_payload),
             x_pt(qr_left_mm),
             y_pt(qr_top_mm + qr_size_mm),
             width=qr_size_mm * _MM_TO_PT,
@@ -155,15 +289,46 @@ class SheetGenerator:
             stroke=1,
             fill=0,
         )
-        pdf.setFillColor(muted)
-        pdf.setFont(fonts.bold, 7.5)
-        pdf.drawString(x_pt(box_left + 3.0), y_pt(28.5), "NAME / SURNAME:")
-        pdf.drawString(x_pt(box_right - 44.0), y_pt(28.5), "DATE:")
+        if student is not None:
+            pdf.setFillColor(muted)
+            pdf.setFont(fonts.bold, 6.8)
+            pdf.drawString(x_pt(box_left + 3.0), y_pt(25.6), "STUDENT:")
+            pdf.setFillColor(ink)
+            pdf.setFont(fonts.bold, 9.2)
+            pdf.drawString(x_pt(box_left + 3.0), y_pt(30.0), fonts.format_text(student.name[:44]))
+
+            meta_parts = [f"ID: {student.student_id}"]
+            if student.classroom:
+                meta_parts.append(f"CLASS: {student.classroom}")
+            if student.booklet:
+                meta_parts.append(f"BOOKLET: {student.booklet}")
+            pdf.setFillColor(muted)
+            pdf.setFont(fonts.regular, 7.6)
+            pdf.drawRightString(
+                x_pt(box_right - 3.0),
+                y_pt(29.8),
+                fonts.format_text("  |  ".join(meta_parts)),
+            )
+        else:
+            pdf.setFillColor(muted)
+            pdf.setFont(fonts.bold, 7.5)
+            pdf.drawString(x_pt(box_left + 3.0), y_pt(28.5), "NAME / SURNAME:")
+            pdf.drawString(x_pt(box_right - 44.0), y_pt(28.5), "DATE:")
 
         blocks: list[FieldBlock] = []
         content_left = 18.0
         content_right = page_w_mm - 18.0
         content_w = content_right - content_left
+
+        # Determine which ID grid (if any) receives pre-filled digits
+        prefill_grid_name = (
+            _match_student_id_grid(spec.id_grids, student.student_id)
+            if (student is not None and pre_fill_id)
+            else None
+        )
+        student_digits = (
+            "".join(ch for ch in student.student_id if ch.isdigit()) if student is not None else ""
+        )
 
         # 3. Optional Top Row: ID Grids + Booklet selector
         id_row_top = 37.5
@@ -210,6 +375,14 @@ class SheetGenerator:
             first_cx = cursor_x + 5.0
             first_cy = id_row_top + 11.5
 
+            # Align digits to grid columns when pre-filling this grid
+            grid_prefill_digits: list[str] = [""] * grid.digits
+            if prefill_grid_name == grid.name and student_digits:
+                trimmed = student_digits[-grid.digits :]
+                offset = grid.digits - len(trimmed)
+                for idx, ch in enumerate(trimmed):
+                    grid_prefill_digits[offset + idx] = ch
+
             # Write digit box row headers
             for d_idx in range(grid.digits):
                 cx_mm = first_cx + d_idx * id_labels_gap_mm
@@ -222,6 +395,12 @@ class SheetGenerator:
                     stroke=1,
                     fill=0,
                 )
+                pre_digit = grid_prefill_digits[d_idx]
+                if pre_digit:
+                    pdf.setFillColor(ink)
+                    pdf.setFont(fonts.bold, 7.0)
+                    pdf.drawCentredString(x_pt(cx_mm), y_pt(id_row_top + 8.6), pre_digit)
+
                 for opt_idx, opt in enumerate(grid.options):
                     cy_mm = first_cy + opt_idx * id_bubbles_gap_mm
                     self._draw_bubble(
@@ -231,6 +410,7 @@ class SheetGenerator:
                         id_bubble_r_mm * _MM_TO_PT,
                         opt,
                         fonts.regular,
+                        filled=(pre_digit != "" and opt == pre_digit),
                     )
 
             prefix = grid.name.lower()
@@ -286,6 +466,11 @@ class SheetGenerator:
             bk_r = 2.2
             bk_first_cx = bk_x + (bk_w - (len(spec.booklet_options) - 1) * bk_gap) / 2.0
             bk_cy = id_row_top + 13.5
+            student_bk = (
+                student.booklet.strip().upper()
+                if (student is not None and pre_fill_id and student.booklet)
+                else ""
+            )
             for opt_idx, opt in enumerate(spec.booklet_options):
                 self._draw_bubble(
                     pdf,
@@ -294,6 +479,7 @@ class SheetGenerator:
                     bk_r * _MM_TO_PT,
                     opt,
                     fonts.regular,
+                    filled=(student_bk != "" and opt.upper() == student_bk),
                 )
 
             blocks.append(
@@ -432,46 +618,10 @@ class SheetGenerator:
         pdf.drawCentredString(
             page_w_pt / 2.0,
             y_pt(page_h_mm - 11.5),
-            f"OMRKit v{__version__} | Preset: {spec.preset_id} | ArUco DICT_4X4_50 [0,1,2,3] | {page_w_px}x{page_h_px}@{dpi}DPI",
+            f"OMRKit v{__version__} | Preset: {spec.preset_id} | ArUco DICT_4X4_50 [0,1,2,3] | {page_w_px}x{page_h_px}@{spec.dpi}DPI",
         )
 
-        pdf.showPage()
-        pdf.save()
-
-        template = Template(
-            version="2.0",
-            name=spec.preset_id,
-            description=spec.title,
-            page_width=page_w_px,
-            page_height=page_h_px,
-            registration=RegistrationConfig(
-                mode="aruco",
-                aruco_dict="DICT_4X4_50",
-                aruco_ids=(0, 1, 2, 3),
-                target_corners=target_corners_px,
-            ),
-            detection=DetectionConfig(),
-            blocks=blocks,
-            metadata={
-                "generated_by": "omrkit.SheetGenerator",
-                "page_format": spec.page_format,
-                "dpi": dpi,
-                "num_questions": spec.num_questions,
-            },
-        )
-
-        answer_key = AnswerKey(
-            exam_name=spec.title,
-            booklet_field="BOOKLET" if spec.include_booklet else None,
-            default_booklet="A",
-            answers=sample_answers,
-        )
-
-        return GeneratedSheet(
-            pdf_bytes=buf.getvalue(),
-            template=template,
-            sample_answer_key=answer_key,
-        )
+        return blocks, target_corners_px, sample_answers
 
     @staticmethod
     def _draw_bubble(
@@ -481,8 +631,17 @@ class SheetGenerator:
         radius_pt: float,
         label: str,
         font_name: str = "Helvetica",
+        *,
+        filled: bool = False,
     ) -> None:
-        """Draw a clean light-outlined circular bubble with a soft interior letter."""
+        """Draw a clean light-outlined circular bubble (optionally pre-filled for roster sheets)."""
+        if filled:
+            pdf.setStrokeColor(colors.HexColor("#18202A"))
+            pdf.setLineWidth(0.65)
+            pdf.setFillColor(colors.HexColor("#1D242C"))
+            pdf.circle(cx_pt, cy_pt, radius_pt, stroke=1, fill=1)
+            return
+
         pdf.setStrokeColor(colors.HexColor("#7B8794"))
         pdf.setLineWidth(0.65)
         pdf.setFillColor(colors.white)
@@ -493,13 +652,25 @@ class SheetGenerator:
         pdf.setFont(font_name, font_size)
         pdf.drawCentredString(cx_pt, cy_pt - font_size * 0.34, label)
 
-    def generate_to_dir(self, spec: SheetSpec, output_dir: str | Path) -> dict[str, Path]:
-        """Write sheet.pdf, template.json, and sample_answer_key.json into output_dir."""
+    def generate_to_dir(
+        self,
+        spec: SheetSpec,
+        output_dir: str | Path,
+        *,
+        students: list[StudentRosterEntry] | None = None,
+        pre_fill_id: bool = True,
+    ) -> dict[str, Path]:
+        """Write sheet.pdf (or personalized roster packet), template.json, and answer_key.json."""
         out = Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)
-        generated = self.generate(spec)
+        if students:
+            generated = self.generate_roster_packet(spec, students, pre_fill_id=pre_fill_id)
+            pdf_name = f"{spec.preset_id}_roster_packet.pdf"
+        else:
+            generated = self.generate(spec)
+            pdf_name = f"{spec.preset_id}_sheet.pdf"
 
-        pdf_path = out / f"{spec.preset_id}_sheet.pdf"
+        pdf_path = out / pdf_name
         template_path = out / "template.json"
         key_path = out / "answer_key.json"
 

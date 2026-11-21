@@ -140,6 +140,19 @@ export interface Dictionary {
   colOmit: string;
   colDistribution: string;
   colQuality: string;
+  // v2.3 Classroom Workflows
+  rosterTitle: string;
+  rosterSub: string;
+  rosterUploadCsv: string;
+  rosterLoadSample: string;
+  rosterPrefillId: string;
+  rosterDownloadPacket: string;
+  rosterGenerating: string;
+  scanKeySheet: string;
+  scanningKey: string;
+  moodleCsv: string;
+  canvasCsv: string;
+  allPdfCards: string;
 }
 
 const EN: Dictionary = {
@@ -269,6 +282,18 @@ const EN: Dictionary = {
   colOmit: "Omit",
   colDistribution: "Option Distribution",
   colQuality: "Status",
+  rosterTitle: "Class Roster Mail-Merge (CSV + QR v3)",
+  rosterSub: "Generate a personalized multi-page PDF packet with each student's name, ID, and v3 QR badge.",
+  rosterUploadCsv: "Load CSV",
+  rosterLoadSample: "Sample (5)",
+  rosterPrefillId: "Pre-fill Student ID & Booklet bubbles",
+  rosterDownloadPacket: "Generate Class PDF Packet",
+  rosterGenerating: "Building packet…",
+  scanKeySheet: "Scan Key Sheet",
+  scanningKey: "Reading key…",
+  moodleCsv: "Moodle CSV",
+  canvasCsv: "Canvas CSV",
+  allPdfCards: "All PDF Cards",
 };
 
 const TR: Dictionary = {
@@ -398,6 +423,18 @@ const TR: Dictionary = {
   colOmit: "Boş",
   colDistribution: "Seçenek Dağılımı",
   colQuality: "Durum",
+  rosterTitle: "Sınıf Listesi Kişiselleştirme (CSV + QR v3)",
+  rosterSub: "Her öğrenciye adı, numarası ve QR v3 kimliği basılı çok sayfalı sınav paketi üretin.",
+  rosterUploadCsv: "CSV Yükle",
+  rosterLoadSample: "Örnek (5)",
+  rosterPrefillId: "Öğrenci No ve Kitapçık balonlarını hazır doldur",
+  rosterDownloadPacket: "Sınıf Sınav Paketini İndir (.pdf)",
+  rosterGenerating: "Paket hazırlanıyor…",
+  scanKeySheet: "Cevap Kağıdı Tara",
+  scanningKey: "Okunuyor…",
+  moodleCsv: "Moodle CSV",
+  canvasCsv: "Canvas CSV",
+  allPdfCards: "Tüm Karneler (.pdf)",
 };
 
 const ZH: Dictionary = {
@@ -524,6 +561,18 @@ const ZH: Dictionary = {
   colOmit: "未答",
   colDistribution: "选项分布",
   colQuality: "状态",
+  rosterTitle: "班级花名册批量生成 (CSV + QR v3)",
+  rosterSub: "按学生名单批量生成含姓名、学号与 v3 二维码的多页 PDF 考卷。",
+  rosterUploadCsv: "导入 CSV",
+  rosterLoadSample: "示例 (5人)",
+  rosterPrefillId: "自动预填学号与试卷版本气泡",
+  rosterDownloadPacket: "生成班级考卷包 (.pdf)",
+  rosterGenerating: "生成中…",
+  scanKeySheet: "扫描标准答案卡",
+  scanningKey: "识别中…",
+  moodleCsv: "Moodle CSV",
+  canvasCsv: "Canvas CSV",
+  allPdfCards: "全部成绩单 (.pdf)",
 };
 
 const DE: Dictionary = {
@@ -650,6 +699,18 @@ const DE: Dictionary = {
   colOmit: "Leer",
   colDistribution: "Verteilung",
   colQuality: "Status",
+  rosterTitle: "Klassenlisten-Seriendruck (CSV + QR v3)",
+  rosterSub: "Personalisiertes mehrseitiges PDF-Paket mit Namen, ID und QR-v3-Kennung je Schüler.",
+  rosterUploadCsv: "CSV laden",
+  rosterLoadSample: "Beispiel (5)",
+  rosterPrefillId: "ID- und Heft-Kreise vorausfüllen",
+  rosterDownloadPacket: "Klassenpaket erstellen (.pdf)",
+  rosterGenerating: "Erstellt…",
+  scanKeySheet: "Lösungsbogen scannen",
+  scanningKey: "Liest…",
+  moodleCsv: "Moodle CSV",
+  canvasCsv: "Canvas CSV",
+  allPdfCards: "Alle PDF-Karten",
 };
 
 const RU: Dictionary = {
@@ -776,6 +837,18 @@ const RU: Dictionary = {
   colOmit: "Пропуск",
   colDistribution: "Распределение",
   colQuality: "Статус",
+  rosterTitle: "Персонализация по списку (CSV + QR v3)",
+  rosterSub: "Многостраничный PDF-пакет с именем, ID и QR v3 для каждого ученика.",
+  rosterUploadCsv: "Загрузить CSV",
+  rosterLoadSample: "Пример (5)",
+  rosterPrefillId: "Предзаполнить кружки ID и варианта",
+  rosterDownloadPacket: "Скачать пакет класса (.pdf)",
+  rosterGenerating: "Создание…",
+  scanKeySheet: "Скан ключа ответов",
+  scanningKey: "Чтение…",
+  moodleCsv: "Moodle CSV",
+  canvasCsv: "Canvas CSV",
+  allPdfCards: "Все карточки PDF",
 };
 
 const ES: Dictionary = {
@@ -902,6 +975,18 @@ const ES: Dictionary = {
   colOmit: "Blanco",
   colDistribution: "Distribución",
   colQuality: "Estado",
+  rosterTitle: "Paquete Personalizado de Clase (CSV + QR v3)",
+  rosterSub: "Genera un PDF multipágina con nombre, ID y código QR v3 por estudiante.",
+  rosterUploadCsv: "Cargar CSV",
+  rosterLoadSample: "Muestra (5)",
+  rosterPrefillId: "Prerrellenar burbujas de ID y Cuadernillo",
+  rosterDownloadPacket: "Generar Paquete PDF de Clase",
+  rosterGenerating: "Generando…",
+  scanKeySheet: "Escanear Hoja Clave",
+  scanningKey: "Leyendo…",
+  moodleCsv: "Moodle CSV",
+  canvasCsv: "Canvas CSV",
+  allPdfCards: "Todas las Boletas PDF",
 };
 
 export const DICTIONARIES: Record<Locale, Dictionary> = { en: EN, tr: TR, zh: ZH, de: DE, ru: RU, es: ES };

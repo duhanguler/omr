@@ -1,8 +1,8 @@
 <div align="center">
 
-# OMRKit v2.2
+# OMRKit v2.3
 
-**Motor de Reconocimiento Óptico de Marcas (OMR) sin calibración manual: recuperación ArUco con 3 de 4 esquinas, tolerancia a manchas borradas de lápiz, microalineación de fotocopias, autodetección de plantilla por QR, detector de cuadrículas con autocorrección de inclinación, escáner por cámara web en vivo, generador PDF vectorial Unicode, psicometría (TCT), API REST FastAPI y Web Studio en 6 idiomas.**
+**Motor OMR sin calibración manual con paquetes PDF personalizados desde lista CSV (`OMRKIT:v3` QR), escaneo de hoja clave del docente (Zero-JSON), exportación Moodle/Canvas y boletas PDF combinadas, recuperación ArUco 3 de 4, filtro de borraduras, microalineación, cámara en vivo, psicometría (TCT) y Web Studio en 6 idiomas.**
 
 [![CI](https://github.com/duhanguler/omr/actions/workflows/ci.yml/badge.svg)](https://github.com/duhanguler/omr/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/omrkit?style=flat-square&color=0D7A52&logo=pypi&logoColor=white)](https://pypi.org/project/omrkit/)
@@ -18,12 +18,16 @@
 
 </div>
 
-> **Demo en Vivo de Web Studio:** Pruébalo directamente en el navegador en **[omrkit-studio.onrender.com](https://omrkit-studio.onrender.com/)** (disponible en **EN · TR · ZH · DE · RU · ES**). Haz clic en **Lote de Muestra** para escanear y calificar 5 hojas ópticas, revisar incidencias con recortes ampliados y atajos de teclado (`A–E`, `Backspace`, `↑↓`), probar **Cámara en Vivo** o generar hojas ArUco + QR listas para imprimir. *(Alojado en el plan gratuito de Render; el primer arranque puede tardar ~20–30 s.)*
+> **Demo en Vivo de Web Studio:** Pruébalo en **[omrkit-studio.onrender.com](https://omrkit-studio.onrender.com/)** (**EN · TR · ZH · DE · RU · ES**): carga el **Lote de Muestra**, genera paquetes PDF personalizados desde CSV, escanea la hoja clave del profesor o exporta calificaciones a Moodle/Canvas. *(Plan gratuito de Render: primer arranque ~20–30 s.)*
 
 ---
 
-## Capacidades Clave (v2.2)
+## Capacidades Clave (v2.3)
 
+- **Flujos de Aula y Docentes (Nuevo):**
+  - **Paquetes Personalizados desde Lista CSV (`--roster class.csv` + `OMRKIT:v3` QR):** Genera un PDF multipágina con nombre, ID, grupo, cuadernillo y burbujas de ID prerrellenadas; al escanear, la identidad del alumno se lee automáticamente desde el QR v3.
+  - **Hoja Clave del Docente sin JSON (`omrkit key-from-sheet`):** Escanea 1–4 hojas clave marcadas a mano (con soporte multi-cuadernillo y respuestas múltiples) para construir `AnswerKey` al instante.
+  - **Moodle, Canvas, Boletas PDF Combinadas y `omrkit watch`:** Exportación directa para libros de calificaciones de Moodle/Canvas, PDF multipágina con todas las boletas (`scorecards_pdf`) y vigilancia automática de carpeta para escáneres ADF.
 - **Visión por Computador Robusta para Papel Real:**
   - **Filtro de Borraduras (`erased_dominance_ratio`):** Distingue restos grises de borrador frente a dobles marcas reales (`multi_marked`), manteniendo 100% de precisión incluso con lápiz HB suave.
   - **Recuperación ArUco 3 de 4 (`aruco_3pt`):** Si un dedo, grapa o doblez cubre una esquina, reconstruye la homografía exacta con las 12 subesquinas de los 3 marcadores visibles.
