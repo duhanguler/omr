@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
-import { Download, FileText, Package, Play, Printer, RefreshCw } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Download, FileText, Package, Play, Printer, RefreshCw, Upload, Users } from "lucide-react";
 import {
   downloadGeneratedBundle,
+  generateRosterPacket,
   generateSheet,
   triggerBlobDownload,
 } from "../api/client";
@@ -13,6 +14,13 @@ interface SheetGeneratorProps {
   presets: PresetBundle[];
   onActivateGenerated: (template: Template, answerKey: AnswerKey) => void;
 }
+
+const SAMPLE_ROSTER_CSV = `student_id,name,classroom,booklet,email
+20260001,Zeynep Yılmaz,12-A,A,zeynep@school.edu
+20260002,Mehmet Kaya,12-A,B,mehmet@school.edu
+20260003,Lukas Weber,12-B,A,lukas@school.edu
+20260004,Lin Wei,12-B,B,lin.wei@school.edu
+20260005,Sofía García,12-C,A,sofia@school.edu`;
 
 function pdfBase64ToBlob(b64: string): Blob {
   const raw = atob(b64);
@@ -26,6 +34,13 @@ export function SheetGenerator({ t, presets, onActivateGenerated }: SheetGenerat
   const [generated, setGenerated] = useState<GenerateResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Class Roster Mail-Merge state
+  const [rosterCsv, setRosterCsv] = useState<string>("");
+  const [preFillId, setPreFillId] = useState<boolean>(true);
+  const [rosterLoading, setRosterLoading] = useState<boolean>(false);
+  const [rosterStatus, setRosterStatus] = useState<string | null>(null);
+  const rosterFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!spec && presets.length > 0) {
@@ -81,10 +96,25 @@ export function SheetGenerator({ t, presets, onActivateGenerated }: SheetGenerat
     const url = URL.createObjectURL(blob);
     const popup = window.open(url, "_blank", "noopener,noreferrer");
     if (!popup) {
-      // Fallback when browser blocks popups: trigger direct download
       triggerBlobDownload(blob, generated.filename);
     }
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
+
+  async function handleGenerateRosterPacket() {
+    if (!spec || !rosterCsv.trim()) return;
+    setRosterLoading(true);
+    setRosterStatus(null);
+    setError(null);
+    try {
+      const { blob, studentCount } = await generateRosterPacket(spec, rosterCsv, preFillId);
+      triggerBlobDownload(blob, `${spec.preset_id}_class_packet.pdf`);
+      setRosterStatus(`PDF · ${studentCount} pages (QR v3)`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Roster packet failed.");
+    } finally {
+      setRosterLoading(false);
+    }
   }
 
   if (!spec) {
@@ -308,6 +338,87 @@ export function SheetGenerator({ t, presets, onActivateGenerated }: SheetGenerat
             </button>
           </div>
         </section>
+
+        {/* Class Roster Mail-Merge PDF Packet (CSV + OMRKIT:v3 QR) */}
+        <section className="paper-card p-4 space-y-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="section-label inline-flex items-center gap-1.5">
+              <Users className="w-3.5 h-3.5 text-[var(--ink-primary)]" />
+              {t.rosterTitle}
+            </h2>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setRosterCsv(SAMPLE_ROSTER_CSV);
+                  setRosterStatus(null);
+                }}
+                className="text-[11px] font-mono text-[var(--accent-cobalt)] hover:underline cursor-pointer"
+              >
+                {t.rosterLoadSample}
+              </button>
+              <span className="text-[var(--border-strong)]">·</span>
+              <button
+                type="button"
+                onClick={() => rosterFileRef.current?.click()}
+                className="text-[11px] font-mono text-[var(--ink-secondary)] hover:text-[var(--ink-primary)] inline-flex items-center gap-1 cursor-pointer"
+              >
+                <Upload className="w-3 h-3" /> {t.rosterUploadCsv}
+              </button>
+              <input
+                ref={rosterFileRef}
+                type="file"
+                accept=".csv,.txt"
+                className="hidden"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  if (f) {
+                    setRosterCsv(await f.text());
+                    setRosterStatus(null);
+                  }
+                  e.target.value = "";
+                }}
+              />
+            </div>
+          </div>
+
+          <p className="text-xs text-[var(--ink-muted)]">{t.rosterSub}</p>
+
+          <textarea
+            rows={4}
+            value={rosterCsv}
+            onChange={(e) => setRosterCsv(e.target.value)}
+            placeholder="student_id,name,classroom,booklet,email"
+            className="workbench-input w-full font-mono text-[11px] leading-relaxed resize-y"
+          />
+
+          <label className="flex items-center gap-2 text-xs cursor-pointer">
+            <input
+              type="checkbox"
+              checked={preFillId}
+              onChange={(e) => setPreFillId(e.target.checked)}
+            />
+            <span className="text-[var(--ink-primary)]">{t.rosterPrefillId}</span>
+          </label>
+
+          <div className="flex items-center justify-between gap-2 pt-1">
+            <button
+              type="button"
+              disabled={rosterLoading || !rosterCsv.trim()}
+              onClick={() => void handleGenerateRosterPacket()}
+              className="btn-primary text-xs w-full justify-center"
+            >
+              <Users className="w-3.5 h-3.5" />
+              {rosterLoading ? t.rosterGenerating : t.rosterDownloadPacket}
+            </button>
+          </div>
+
+          {rosterStatus && (
+            <div className="text-[11px] font-mono text-[var(--signal-ok)] bg-[var(--signal-ok-bg)] px-2.5 py-1.5 rounded-[4px]">
+              {rosterStatus}
+            </div>
+          )}
+        </section>
       </aside>
 
       {/* Live Print Preview */}
@@ -334,7 +445,7 @@ export function SheetGenerator({ t, presets, onActivateGenerated }: SheetGenerat
           <span className="text-[var(--border-strong)]">·</span>
           <span>ArUco [0,1,2,3]</span>
           <span className="text-[var(--border-strong)]">·</span>
-          <span className="text-[var(--signal-ok)]">QR Auto-ID</span>
+          <span className="text-[var(--signal-ok)]">QR v2 / v3 Roster</span>
         </div>
 
         <div className="optical-stage p-5 flex justify-center min-h-[600px]">

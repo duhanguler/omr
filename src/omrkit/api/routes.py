@@ -25,10 +25,15 @@ from omrkit.core.migrator import migrate_legacy_template_dict
 from omrkit.core.scanner import OMRScanner
 from omrkit.generator.pdf_sheet import SheetGenerator
 from omrkit.generator.presets import SheetSpec, get_sheet_preset, get_sheet_presets
+from omrkit.generator.roster import parse_roster_csv
 from omrkit.grading.grader import ExamGrader
+from omrkit.grading.key_extractor import extract_answer_key_from_sheets
 from omrkit.io.exporters import (
+    export_canvas_csv_string,
     export_csv_string,
     export_excel_bytes,
+    export_merged_scorecards_pdf_bytes,
+    export_moodle_csv_string,
     export_pdf_scorecard_bytes,
 )
 from omrkit.io.loader import DocumentLoadError, load_bytes
@@ -615,3 +620,142 @@ def export_scorecard_endpoint(payload: ScorecardRequest) -> Response:
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
     )
+
+
+@router.post("/export/scorecards-pdf")
+def export_merged_scorecards_endpoint(payload: ExportRequest) -> Response:
+    """Export one merged multi-page PDF containing all graded students' scorecards."""
+    if payload.report is None or not payload.report.grades:
+        raise HTTPException(
+            status_code=400, detail="A non-empty grading report is required for class scorecards."
+        )
+    pdf_bytes = export_merged_scorecards_pdf_bytes(payload.report)
+    safe_name = _safe_download_filename(payload.report.exam_name, "_class_scorecards.pdf")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
+    )
+
+
+@router.post("/export/moodle")
+def export_moodle_endpoint(payload: ExportRequest) -> Response:
+    """Export graded results as a Moodle Gradebook import CSV."""
+    if payload.report is None:
+        raise HTTPException(status_code=400, detail="Grading report is required for Moodle export.")
+    csv_text = export_moodle_csv_string(payload.report)
+    return Response(
+        content=csv_text.encode("utf-8-sig"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="omrkit_moodle_grades.csv"'},
+    )
+
+
+@router.post("/export/canvas")
+def export_canvas_endpoint(payload: ExportRequest) -> Response:
+    """Export graded results as a Canvas LMS Gradebook import CSV."""
+    if payload.report is None:
+        raise HTTPException(status_code=400, detail="Grading report is required for Canvas export.")
+    csv_text = export_canvas_csv_string(payload.report)
+    return Response(
+        content=csv_text.encode("utf-8-sig"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="omrkit_canvas_grades.csv"'},
+    )
+
+
+@router.post("/generate/roster-packet")
+async def generate_roster_packet_endpoint(
+    spec_json: str = Form(...),
+    roster_csv: str = Form(default=""),
+    roster_file: UploadFile | None = File(default=None),
+    pre_fill_id: bool = Form(default=True),
+) -> Response:
+    """Generate a personalized multi-page class exam PDF packet with OMRKIT:v3 student QR badges."""
+    settings = get_api_settings()
+    try:
+        spec = SheetSpec.model_validate(json.loads(spec_json))
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid sheet spec JSON: {exc}") from exc
+
+    csv_text = roster_csv
+    if roster_file is not None:
+        raw_bytes = await _read_bounded_upload(roster_file, settings)
+        try:
+            csv_text = raw_bytes.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            csv_text = raw_bytes.decode("latin-1", errors="replace")
+
+    max_students = 150 if settings.demo_mode else 500
+    try:
+        students = parse_roster_csv(csv_text, max_students=max_students)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    generated = SheetGenerator().generate_roster_packet(spec, students, pre_fill_id=pre_fill_id)
+    safe_name = _safe_download_filename(spec.preset_id, "_class_packet.pdf")
+    return Response(
+        content=generated.pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_name}"',
+            "X-OMRKit-Student-Count": str(len(students)),
+        },
+    )
+
+
+@router.post("/answer-key/from-sheet")
+async def extract_answer_key_endpoint(
+    files: list[UploadFile] = File(...),
+    template_json: str = Form(default="auto"),
+    exam_name: str = Form(default="Scanned Answer Key"),
+    dpi: int = Form(default=200),
+) -> dict[str, Any]:
+    """Scan 1-4 teacher answer-key sheets (explicit template or QR auto) and extract an AnswerKey."""
+    settings = get_api_settings()
+    if not (72 <= dpi <= 350):
+        raise HTTPException(status_code=400, detail="DPI must be between 72 and 350.")
+    if not files:
+        raise HTTPException(status_code=400, detail="Upload at least one teacher answer-key sheet.")
+    if len(files) > 8:
+        raise HTTPException(status_code=400, detail="Maximum 8 answer-key files per request.")
+
+    auto_mode = template_json.strip().lower() in {"", "auto"}
+    tmpl: Template | None = None
+    scanner: OMRScanner | None = None
+    if not auto_mode:
+        try:
+            tmpl = Template.model_validate(json.loads(template_json))
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid template JSON: {exc}") from exc
+        if tmpl.registration.marker_path or tmpl.registration.reference_path:
+            raise HTTPException(
+                status_code=400,
+                detail="Local server paths ('marker_path' / 'reference_path') are disabled on HTTP API.",
+            )
+        scanner = OMRScanner(template=tmpl, dpi=dpi)
+
+    scanned_sheets: list[SheetResult] = []
+    for upload in files:
+        raw_bytes = await _read_bounded_upload(upload, settings)
+        fname = upload.filename or "key_sheet.png"
+        try:
+            page_results = (
+                scan_bytes_auto(raw_bytes, filename=fname, dpi=dpi, max_pages=8)
+                if scanner is None
+                else scanner.scan_bytes(raw_bytes, filename=fname, max_pages=8)
+            )
+        except DocumentLoadError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        scanned_sheets.extend(res for res, _ in page_results)
+
+    try:
+        extracted = extract_answer_key_from_sheets(
+            scanned_sheets,
+            template=tmpl,
+            exam_name=exam_name.strip() or "Scanned Answer Key",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return extracted.model_dump(mode="json")

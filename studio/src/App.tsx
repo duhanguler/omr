@@ -211,7 +211,7 @@ export default function App() {
                 OMRKit
               </h1>
               <p className="text-[10px] font-mono text-[var(--ink-muted)] mt-0.5">
-                v{health?.version ?? "2.2.0"} · {t.subtitle}
+                v{health?.version ?? "2.3.0"} · {t.subtitle}
               </p>
             </div>
           </div>
@@ -397,6 +397,7 @@ export default function App() {
         {tab === "analytics" && (
           <AnalyticsView
             t={t}
+            activeTemplate={activeTemplate}
             sheets={scanResponse?.sheets ?? []}
             policies={policies}
             answerKey={activeAnswerKey}
@@ -411,7 +412,7 @@ export default function App() {
       <footer className="border-t border-[var(--border-hairline)] bg-[var(--surface-card)]">
         <div className="max-w-[1440px] mx-auto px-4 sm:px-6 h-8 flex items-center justify-between gap-4 text-[11px] font-mono text-[var(--ink-muted)] overflow-x-auto whitespace-nowrap">
           <div className="flex items-center gap-3">
-            <span>OMRKit v{health?.version ?? "2.2.0"}</span>
+            <span>OMRKit v{health?.version ?? "2.3.0"}</span>
             {activeTemplate && (
               <>
                 <span className="text-[var(--border-strong)]">/</span>

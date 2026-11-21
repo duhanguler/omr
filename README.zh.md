@@ -1,8 +1,8 @@
 <div align="center">
 
-# OMRKit v2.2
+# OMRKit v2.3
 
-**零校准光学标记识别（OMR）引擎：支持 3/4 遮挡 ArUco 角点恢复、擦除铅笔痕迹抗干扰、复印偏移局部微对齐、二维码自动模板识别、空白答题卡自动纠偏网格检测、浏览器实时摄像头阅卷、Unicode 矢量 PDF 答题卡生成、经典测试理论（CTT）心理测量分析、FastAPI REST API 与 6 语言 Web Studio。**
+**零校准光学标记识别（OMR）引擎：支持班级花名册 CSV 批量个性化考卷（`OMRKIT:v3` 学生二维码）、扫描教师答案卡免 JSON 建库、Moodle/Canvas 成绩表与整班合集 PDF 成绩单、3/4 遮挡 ArUco 角点恢复、擦除痕迹抗干扰、复印偏移微对齐、实时摄像头阅卷、CTT 心理测量分析与 6 语言 Web Studio。**
 
 [![CI](https://github.com/duhanguler/omr/actions/workflows/ci.yml/badge.svg)](https://github.com/duhanguler/omr/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/omrkit?style=flat-square&color=0D7A52&logo=pypi&logoColor=white)](https://pypi.org/project/omrkit/)
@@ -18,12 +18,16 @@
 
 </div>
 
-> **在线 Web Studio 演示：** 直接在浏览器打开 **[omrkit-studio.onrender.com](https://omrkit-studio.onrender.com/)**（支持 **EN · TR · ZH · DE · RU · ES** 切换）——点击顶部 **示例数据** 即可一键扫描并批改 5 份试卷，使用放大气泡局部裁切与键盘快捷键（`A–E`、`Backspace`、`↑↓`）快速人工复核，或测试 **实时摄像头** 与矢量 PDF 答题卡生成。*（托管于 Render 免费层，冷启动约需 20–30 秒。）*
+> **在线 Web Studio 演示：** 直接在浏览器打开 **[omrkit-studio.onrender.com](https://omrkit-studio.onrender.com/)**（支持 **EN · TR · ZH · DE · RU · ES** 切换）——点击顶部 **示例数据** 即可一键扫描并批改 5 份试卷，或体验花名册批量考卷生成、教师答案卡扫描与 Moodle/Canvas 导出。*（托管于 Render 免费层，冷启动约需 20–30 秒。）*
 
 ---
 
-## 核心特性（v2.2）
+## 核心特性（v2.3）
 
+- **课堂与教师全流程工作流（新）：**
+  - **花名册批量个性化 PDF（`--roster class.csv` + `OMRKIT:v3` 二维码）：** 从 CSV 名单自动生成印有学生姓名、学号、班级、卷别且支持预填学号气泡的多页考卷 PDF，扫描时直接由二维码精准绑定身份。
+  - **免 JSON 扫描标准答案卡（`omrkit key-from-sheet`）：** 直接扫描教师手填的 1–4 份 A/B/C/D 卷标准答案卡即可生成 `AnswerKey`（自动识别多选题与未填预警）。
+  - **Moodle / Canvas 成绩单 & 整班合并 PDF 成绩册：** 一键导出 Moodle/Canvas CSV、整班合并打印 PDF 成绩单（`scorecards_pdf`）及高速扫描仪实时目录监控（`omrkit watch`）。
 - **真实考场光学鲁棒性：**
   - **擦除铅笔痕迹过滤（`erased_dominance_ratio`）：** 通过灰度主导比区分擦除残留与真实多涂，避免误报 `multi_marked`，同时完整捕获真实双选与轻度 HB 铅笔填涂。
   - **3/4 遮挡 ArUco 角点恢复（`aruco_3pt`）：** 当手指、订书钉或折角遮挡任意 1 个定位角时，自动利用其余 3 个标记的 12 个亚像素角点解算精确透视单应矩阵。

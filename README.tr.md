@@ -1,8 +1,8 @@
 <div align="center">
 
-# OMRKit v2.2
+# OMRKit v2.3
 
-**3/4 kapalı ArUco köşe kurtarma, silinmiş kurşun kalem lekesi dayanımı, fotokopi kayması mikro hizalama, QR otomatik şablon tanıma, eğik form düzelten ızgara bulucu, canlı kamera tarayıcı, Türkçe Unicode PDF form üreteci, sınav psikometrisi, FastAPI REST API ve 6 dilli Web Studio.**
+**Sınıf CSV kişiselleştirilmiş sınav paketi (`OMRKIT:v3` QR), cevap kağıdından Zero-JSON anahtar tarama, Moodle/Canvas not defteri ve toplu PDF karne, 3/4 ArUco köşe kurtarma, silinmiş leke dayanımı, fotokopi mikro hizalama, canlı kamera tarayıcı, Türkçe Unicode PDF üreteci, sınav psikometrisi ve 6 dilli Web Studio.**
 
 [![CI](https://github.com/duhanguler/omr/actions/workflows/ci.yml/badge.svg)](https://github.com/duhanguler/omr/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/omrkit?style=flat-square&color=0D7A52&logo=pypi&logoColor=white)](https://pypi.org/project/omrkit/)
@@ -17,12 +17,16 @@
 
 </div>
 
-> **Canlı Web Studio Demosu:** Kurulum yapmadan tarayıcınızda deneyin → **[omrkit-studio.onrender.com](https://omrkit-studio.onrender.com/)** (`EN · TR · ZH · DE · RU · ES` destekli). Üst çubuktan **Örnek Kohort** düğmesine tıklayıp 5 öğrencilik sınavı tarayın, yakınlaştırılmış balon kırpımları ve klavye kısayollarıyla (`A–E`, `Backspace`, `↑↓`) inceleme kuyruğunu hızla doğrulayın. *(Render ücretsiz katmanında ilk açılış ~20–30 sn sürebilir.)*
+> **Canlı Web Studio Demosu:** Kurulum yapmadan tarayıcınızda deneyin → **[omrkit-studio.onrender.com](https://omrkit-studio.onrender.com/)** (`EN · TR · ZH · DE · RU · ES` destekli). Üst çubuktan **Örnek Kohort** düğmesine tıklayıp 5 öğrencilik sınavı tarayın, sınıf CSV'sinden kişiselleştirilmiş PDF paketi üretin veya öğretmen cevap anahtarı kağıdını doğrudan tarayın. *(Render ücretsiz katmanında ilk açılış ~20–30 sn sürebilir.)*
 
 ---
 
-## v2.2 Öne Çıkan Özellikler
+## v2.3 Öne Çıkan Özellikler
 
+- **Sınıf & Öğretmen İş Akışları (Yeni!):**
+  - **Sınıf Listesi Kişiselleştirme (`--roster class.csv` + `OMRKIT:v3` QR):** CSV sınıf listesinden (noktalı virgül/virgül & Türkçe başlık uyumlu) her öğrenciye adı, numarası, sınıfı ve kitapçığı basılı, isteğe bağlı ID/Kitapçık balonları önceden doldurulmuş çok sayfalı PDF sınav paketi üretir; taranırken öğrenci kimliği QR v3'ten sıfır kodlama hatasıyla okunur.
+  - **Cevap Kağıdından Zero-JSON Anahtar (`omrkit key-from-sheet`):** Öğretmenin kalemle doldurduğu 1–4 kitapçıklı cevap anahtarı kağıdını doğrudan `AnswerKey` JSON'a dönüştürür (çoklu doğru cevapları ve boş soruları otomatik tanır).
+  - **Moodle & Canvas LMS + Toplu Sınıf PDF Karne:** Tek tıkla Moodle/Canvas not defteri CSV'si, tüm sınıfı içeren tek çok sayfalı PDF karne (`scorecards_pdf`) ve masaüstü ADF tarayıcılar için canlı klasör izleyici (`omrkit watch`).
 - **Gerçek Hayat Optik Dayanımı:**
   - **Silinmiş Kurşun Kalem Lekesi Filtresi:** Koyuluk baskınlığı filtresiyle silinmiş gri izleri yanlış çift işaretleme olarak bayraklamaz; gerçek çift işaretlemeleri (`multi_marked`) eksiksiz yakalar.
   - **3/4 ArUco Köşe Kurtarma (`aruco_3pt`):** Bir köşe işaretçisi parmak, zımba veya katlanma nedeniyle kapansa bile kalan 3 işaretçinin 12 alt-piksel köşesinden tam perspektif homografisi kurar.

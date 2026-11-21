@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -7,11 +7,14 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
+  GraduationCap,
   Play,
+  ScanLine,
 } from "lucide-react";
 import {
   exportReportFile,
   exportStudentScorecard,
+  extractAnswerKeyFromSheets,
   gradeSheets,
   triggerBlobDownload,
 } from "../api/client";
@@ -22,10 +25,12 @@ import type {
   GradingReport,
   SheetResult,
   StudentGrade,
+  Template,
 } from "../types";
 
 interface AnalyticsViewProps {
   t: Dictionary;
+  activeTemplate: Template | null;
   sheets: SheetResult[];
   policies: GradingPolicy[];
   answerKey: AnswerKey | null;
@@ -39,6 +44,7 @@ type ItemFilter = "all" | "poor_discrimination" | "too_hard" | "too_easy";
 
 export function AnalyticsView({
   t,
+  activeTemplate,
   sheets,
   policies,
   answerKey,
@@ -55,7 +61,10 @@ export function AnalyticsView({
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [itemFilter, setItemFilter] = useState<ItemFilter>("all");
   const [loading, setLoading] = useState(false);
+  const [scanningKey, setScanningKey] = useState(false);
+  const [keyNotice, setKeyNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const keySheetInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (report?.policy_name) {
@@ -164,11 +173,44 @@ export function AnalyticsView({
     }
   }
 
-  async function handleExport(fmt: "csv" | "xlsx") {
+  async function handleScanTeacherKeySheets(files: File[]) {
+    if (files.length === 0) return;
+    setScanningKey(true);
+    setError(null);
+    setKeyNotice(null);
+    try {
+      const res = await extractAnswerKeyFromSheets(
+        files,
+        activeTemplate ?? "auto",
+        activeTemplate?.description || "Scanned Answer Key"
+      );
+      onUpdateAnswerKey(res.answer_key);
+      if (res.booklets_detected.length > 0) {
+        setSelectedBooklet(res.booklets_detected[0]);
+      }
+      const warnSuffix = res.warnings.length > 0 ? ` · ${res.warnings[0]}` : "";
+      setKeyNotice(
+        `OK · ${res.questions_count}Q · Booklets: ${res.booklets_detected.join(", ")}${warnSuffix}`
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Key sheet scan failed.");
+    } finally {
+      setScanningKey(false);
+    }
+  }
+
+  async function handleExport(fmt: "csv" | "xlsx" | "moodle" | "canvas" | "scorecards-pdf") {
     if (!report) return;
+    const filenames: Record<typeof fmt, string> = {
+      csv: "graded_results.csv",
+      xlsx: "graded_report.xlsx",
+      moodle: "omrkit_moodle_grades.csv",
+      canvas: "omrkit_canvas_grades.csv",
+      "scorecards-pdf": "omrkit_class_scorecards.pdf",
+    };
     try {
       const blob = await exportReportFile(fmt, sheets, report);
-      triggerBlobDownload(blob, fmt === "csv" ? "graded_results.csv" : "graded_report.xlsx");
+      triggerBlobDownload(blob, filenames[fmt]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Export failed.");
     }
@@ -196,55 +238,79 @@ export function AnalyticsView({
   return (
     <div className="space-y-5">
       {/* Control Strip */}
-      <section className="paper-card p-4 flex flex-wrap items-end justify-between gap-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="text-xs space-y-1">
-            <span className="section-label block">{t.scoringPolicy}</span>
-            <select
-              className="workbench-input"
-              value={selectedPolicyName}
-              onChange={(e) => setSelectedPolicyName(e.target.value)}
-            >
-              <option value="standard">Standard (+1 / 0)</option>
-              <option value="yks_tyt">YKS / TYT (4 Wrong = -1 Correct)</option>
-              <option value="kpss">KPSS (4 Wrong = -1 Correct)</option>
-              <option value="lgs">LGS (3 Wrong = -1 Correct)</option>
-              <option value="sat_legacy">Negative Quarter (+1 / -0.25)</option>
-            </select>
-          </label>
+      <section className="paper-card p-4 space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="text-xs space-y-1">
+              <span className="section-label block">{t.scoringPolicy}</span>
+              <select
+                className="workbench-input"
+                value={selectedPolicyName}
+                onChange={(e) => setSelectedPolicyName(e.target.value)}
+              >
+                <option value="standard">Standard (+1 / 0)</option>
+                <option value="yks_tyt">YKS / TYT (4 Wrong = -1 Correct)</option>
+                <option value="kpss">KPSS (4 Wrong = -1 Correct)</option>
+                <option value="lgs">LGS (3 Wrong = -1 Correct)</option>
+                <option value="sat_legacy">Negative Quarter (+1 / -0.25)</option>
+              </select>
+            </label>
 
-          <label className="text-xs space-y-1">
-            <span className="section-label block">{t.uploadAnswerKey}</span>
-            <input
-              type="file"
-              accept=".json"
-              className="workbench-input text-xs"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                try {
-                  const parsed = JSON.parse(await file.text()) as AnswerKey;
-                  onUpdateAnswerKey(parsed);
-                  const bks = Object.keys(parsed.booklets ?? {});
-                  if (bks.length > 0) {
-                    setSelectedBooklet(
-                      parsed.default_booklet && bks.includes(parsed.default_booklet)
-                        ? parsed.default_booklet
-                        : bks[0]
-                    );
+            <label className="text-xs space-y-1">
+              <span className="section-label block">{t.uploadAnswerKey}</span>
+              <input
+                type="file"
+                accept=".json"
+                className="workbench-input text-xs"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  try {
+                    const parsed = JSON.parse(await file.text()) as AnswerKey;
+                    onUpdateAnswerKey(parsed);
+                    const bks = Object.keys(parsed.booklets ?? {});
+                    if (bks.length > 0) {
+                      setSelectedBooklet(
+                        parsed.default_booklet && bks.includes(parsed.default_booklet)
+                          ? parsed.default_booklet
+                          : bks[0]
+                      );
+                    }
+                    setKeyNotice(null);
+                    setError(null);
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : "Invalid answer key JSON");
+                  } finally {
+                    e.target.value = "";
                   }
-                  setError(null);
-                } catch (err) {
-                  setError(err instanceof Error ? err.message : "Invalid answer key JSON");
-                } finally {
-                  e.target.value = "";
-                }
+                }}
+              />
+            </label>
+
+            <button
+              type="button"
+              disabled={scanningKey}
+              onClick={() => keySheetInputRef.current?.click()}
+              className="btn-secondary text-xs"
+              title="Scan a teacher-marked optical sheet (1-4 booklets) directly into an AnswerKey"
+            >
+              <ScanLine className="w-3.5 h-3.5 text-[var(--accent-cobalt)]" />
+              {scanningKey ? t.scanningKey : t.scanKeySheet}
+            </button>
+            <input
+              ref={keySheetInputRef}
+              type="file"
+              accept="image/*,.pdf"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                const selected = Array.from(e.target.files ?? []);
+                if (selected.length > 0) void handleScanTeacherKeySheets(selected);
+                e.target.value = "";
               }}
             />
-          </label>
-        </div>
+          </div>
 
-        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             disabled={loading || sheets.length === 0 || !answerKey}
@@ -254,27 +320,55 @@ export function AnalyticsView({
             <Play className="w-3.5 h-3.5 fill-current" />
             {loading ? t.grading : `${t.gradeSheetsBtn} (${sheets.length})`}
           </button>
-
-          {report && (
-            <>
-              <button
-                type="button"
-                onClick={() => void handleExport("csv")}
-                className="btn-secondary text-xs"
-              >
-                <Download className="w-3.5 h-3.5" /> CSV
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleExport("xlsx")}
-                className="btn-secondary text-xs"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5" /> {t.excelReport}
-              </button>
-            </>
-          )}
         </div>
+
+        {/* Dedicated Export Strip (CSV, Excel, Moodle LMS, Canvas LMS, Merged Class PDF) */}
+        {report && (
+          <div className="pt-3 border-t border-[var(--border-hairline)] flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void handleExport("csv")}
+              className="btn-secondary text-xs"
+            >
+              <Download className="w-3.5 h-3.5" /> CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleExport("xlsx")}
+              className="btn-secondary text-xs"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" /> {t.excelReport}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleExport("moodle")}
+              className="btn-secondary text-xs"
+            >
+              <GraduationCap className="w-3.5 h-3.5" /> {t.moodleCsv}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleExport("canvas")}
+              className="btn-secondary text-xs"
+            >
+              <GraduationCap className="w-3.5 h-3.5" /> {t.canvasCsv}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleExport("scorecards-pdf")}
+              className="btn-primary text-xs"
+            >
+              <FileText className="w-3.5 h-3.5" /> {t.allPdfCards}
+            </button>
+          </div>
+        )}
       </section>
+
+      {keyNotice && (
+        <div className="p-2.5 rounded-[5px] bg-[var(--signal-ok-bg)] text-[var(--signal-ok)] text-xs font-mono border border-emerald-200">
+          {keyNotice}
+        </div>
+      )}
 
       {error && (
         <div className="p-3 rounded-[5px] bg-[var(--signal-err-bg)] text-[var(--signal-err)] text-xs font-mono border border-red-200">
@@ -486,29 +580,43 @@ export function AnalyticsView({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--border-hairline)] font-mono tabular-nums">
-                    {sortedGrades.map((g) => (
-                      <tr key={g.sheet_id} className="hover:bg-[var(--surface-paper)]">
-                        <td className="px-3 py-2 font-medium">{g.sheet_id}</td>
-                        <td className="px-3 py-2 font-semibold">
-                          {g.raw_score} / {g.max_score}
-                        </td>
-                        <td className="px-3 py-2">{g.percentage.toFixed(1)}%</td>
-                        <td className="px-3 py-2">
-                          <span className="text-[var(--signal-ok)]">{g.correct}</span> /{" "}
-                          <span className="text-[var(--signal-err)]">{g.incorrect}</span> /{" "}
-                          <span className="text-[var(--ink-muted)]">{g.blank}</span>
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <button
-                            type="button"
-                            onClick={() => void handleScorecard(g)}
-                            className="inline-flex items-center gap-1 text-[var(--accent-cobalt)] hover:underline cursor-pointer"
-                          >
-                            <FileText className="w-3.5 h-3.5" /> PDF
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {sortedGrades.map((g) => {
+                      const studentName = g.student_metadata.STUDENT_NAME;
+                      const classroom = g.student_metadata.CLASSROOM;
+                      return (
+                        <tr key={g.sheet_id} className="hover:bg-[var(--surface-paper)]">
+                          <td className="px-3 py-2">
+                            <div className="font-medium text-[var(--ink-primary)]">
+                              {studentName || g.sheet_id}
+                            </div>
+                            {(studentName || classroom) && (
+                              <div className="text-[10px] text-[var(--ink-muted)]">
+                                {g.sheet_id}
+                                {classroom ? ` · ${classroom}` : ""}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 font-semibold">
+                            {g.raw_score} / {g.max_score}
+                          </td>
+                          <td className="px-3 py-2">{g.percentage.toFixed(1)}%</td>
+                          <td className="px-3 py-2">
+                            <span className="text-[var(--signal-ok)]">{g.correct}</span> /{" "}
+                            <span className="text-[var(--signal-err)]">{g.incorrect}</span> /{" "}
+                            <span className="text-[var(--ink-muted)]">{g.blank}</span>
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <button
+                              type="button"
+                              onClick={() => void handleScorecard(g)}
+                              className="inline-flex items-center gap-1 text-[var(--accent-cobalt)] hover:underline cursor-pointer"
+                            >
+                              <FileText className="w-3.5 h-3.5" /> PDF
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

@@ -22,8 +22,47 @@ from omrkit.io.loader import (
 from omrkit.models.scan import BatchResult, ReviewItem, SheetResult
 from omrkit.models.template import Template
 from omrkit.vision.detector import HybridBubbleDetector
+from omrkit.vision.qr import SheetQRPayload, detect_sheet_qr_payload
 from omrkit.vision.registration import RegistrationError, register_sheet
 from omrkit.vision.visualizer import render_annotated_sheet
+
+
+def inject_qr_student_metadata(result: SheetResult, payload: SheetQRPayload) -> None:
+    """Attach OMRKIT:v3 student metadata decoded from a sheet QR badge to a SheetResult."""
+    if not payload.has_student_metadata:
+        return
+
+    if payload.student_name:
+        result.grouped_values["STUDENT_NAME"] = payload.student_name
+    if payload.classroom:
+        result.grouped_values["CLASSROOM"] = payload.classroom
+    if payload.email:
+        result.grouped_values["EMAIL"] = payload.email
+
+    if payload.student_id:
+        primary_keys = ("STUDENT_ID", "OGRENCI_NO", "TC_KIMLIK_NO")
+        matched_key = next((k for k in primary_keys if k in result.grouped_values), None)
+        if matched_key is not None:
+            if not result.grouped_values[matched_key].strip():
+                result.grouped_values[matched_key] = payload.student_id
+                result.review_items = [
+                    r
+                    for r in result.review_items
+                    if not (r.field_id == matched_key and r.reason == "invalid_checksum")
+                ]
+        else:
+            result.grouped_values["STUDENT_ID"] = payload.student_id
+        # Always expose canonical STUDENT_ID if primary group used another name and wasn't set
+        if not result.grouped_values.get("STUDENT_ID", "").strip():
+            result.grouped_values["STUDENT_ID"] = payload.student_id
+
+    if payload.booklet:
+        bk_field = result.fields.get("BOOKLET")
+        if bk_field is not None:
+            if not bk_field.value.strip():
+                result.apply_override("BOOKLET", payload.booklet)
+        elif not result.grouped_values.get("BOOKLET", "").strip():
+            result.grouped_values["BOOKLET"] = payload.booklet
 
 
 def _scan_single_file_worker(
@@ -170,6 +209,14 @@ class OMRScanner:
             elapsed_ms=round(elapsed, 2),
             warnings=warnings,
         )
+
+        # Inspect compact upper-right QR badge on ArUco-generated sheets for OMRKIT:v3 student info
+        if reg.method.startswith("aruco"):
+            wh, ww = reg.warped_bgr.shape[:2]
+            qr_roi = reg.warped_bgr[0 : round(wh * 0.22), round(ww * 0.65) : ww]
+            qr_payload = detect_sheet_qr_payload(qr_roi)
+            if qr_payload is not None and qr_payload.has_student_metadata:
+                inject_qr_student_metadata(result, qr_payload)
 
         if save_overlay_dir is not None:
             out_dir = Path(save_overlay_dir)

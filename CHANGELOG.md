@@ -2,6 +2,21 @@
 
 All notable changes to **OMRKit** are documented in this file.
 
+## [2.3.0] - 2026-11-21
+
+### Added — Classroom & Teacher Workflows
+- **Personalized Class Roster Mail-Merge PDF + `OMRKIT:v3` Student QR (`omrkit.generator.roster`, `omrkit.generator.pdf_sheet`, `omrkit.vision.qr`, `omrkit.core.scanner`, `omrkit.core.auto_scanner`):**
+  - Parse UTF-8/BOM comma, semicolon, or tab-delimited class roster CSVs with multilingual header auto-mapping (English, Turkish, German, Spanish, Russian, Chinese transliterations, plus split `First`/`Last` name auto-join).
+  - Generate personalized multi-page PDF exam packets printing each student's name, ID, class, and booklet with an embedded `OMRKIT:v3` QR badge and optional pre-filled Student ID & Booklet bubbles (`omrkit generate --roster class.csv`, `POST /api/generate/roster-packet`, and Studio **Sheet Generator**).
+  - Automatically decodes `OMRKIT:v3` student identity metadata on both explicit-template (`OMRScanner`) and zero-template QR scans (`scan_image_auto`), flowing seamlessly into grading, Excel, Moodle/Canvas CSVs, and PDF scorecards while maintaining 100% backward compatibility with `OMRKIT:v2` sheets.
+- **Zero-JSON Teacher Answer-Key Sheet Scanner (`omrkit.grading.key_extractor`):**
+  - Scan 1–4 teacher-marked optical key sheets directly into a single- or multi-booklet `AnswerKey` via `omrkit key-from-sheet`, `POST /api/answer-key/from-sheet`, and the Studio **Scan Key Sheet** button — automatically handling multi-answer items (`["A", "C"]`) and reporting blank-question warnings.
+- **Moodle & Canvas LMS Gradebook Exporters + Merged Class PDF Scorecards (`omrkit.io.exporters`):**
+  - Added Moodle Offline Grading CSV (`export_moodle_csv`, `POST /api/export/moodle`), Canvas LMS Gradebook CSV with `Points Possible` metadata row (`export_canvas_csv`, `POST /api/export/canvas`), single merged multi-page class scorecards PDF (`export_merged_scorecards_pdf`, `POST /api/export/scorecards-pdf`), and scorecards ZIP archive (`export_scorecards_zip_bytes`).
+  - Exposed in CLI via `omrkit scan --format csv,json,xlsx,moodle,canvas,scorecards_pdf` and in Web Studio **Grading & Analytics**.
+- **Live Folder Watcher CLI (`omrkit watch`):**
+  - Pure-stdlib continuous polling watcher for desktop ADF scanners that scans newly dropped images/PDFs and updates CSV, JSON, Moodle/Canvas CSVs, and annotated overlays automatically.
+
 ## [2.2.0] - 2026-11-21
 
 ### Improved — Core CV, Registration, PDF & API

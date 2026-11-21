@@ -1,8 +1,8 @@
 <div align="center">
 
-# OMRKit v2.2
+# OMRKit v2.3
 
-**Kalibrierungsfreie Optical-Mark-Recognition-Engine (OMR) mit 3-von-4-ArUco-Eckenwiederherstellung, Radiergummi-Schmierfilter, Kopierversatz-Mikroausrichtung, QR-Vorlagenerkennung, automatischer Rastererkennung mit Entzerrung, Browser-Live-Kamera, Unicode-Vektor-PDF-Generator, Klassischer Testtheorie (KTT), FastAPI-REST-API und 6-sprachigem Web Studio.**
+**Kalibrierungsfreie OMR-Engine mit personalisiertem Klassenlisten-Seriendruck (`OMRKIT:v3`-QR), Zero-JSON-Lösungsbogen-Scan, Moodle/Canvas-Notenexport & Klassen-Sammel-PDF, 3-von-4-ArUco-Wiederherstellung, Radiergummi-Schmierfilter, Kopierversatz-Mikroausrichtung, Live-Kamera, KTT-Psychometrie und 6-sprachigem Web Studio.**
 
 [![CI](https://github.com/duhanguler/omr/actions/workflows/ci.yml/badge.svg)](https://github.com/duhanguler/omr/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/omrkit?style=flat-square&color=0D7A52&logo=pypi&logoColor=white)](https://pypi.org/project/omrkit/)
@@ -18,12 +18,16 @@
 
 </div>
 
-> **Öffentliche Web-Studio-Demo:** Direkt im Browser unter **[omrkit-studio.onrender.com](https://omrkit-studio.onrender.com/)** testen (verfügbar in **EN · TR · ZH · DE · RU · ES**). Klicken Sie oben auf **Beispieldaten**, um 5 Antwortbögen auszuwerten, markierte Felder per Tastatur (`A–E`, `Backspace`, `↑↓`) mit vergrößertem Ausschnitt zu prüfen oder eigene ArUco-PDFs zu erzeugen. *(Render Free Tier; Kaltstart ca. 20–30 s.)*
+> **Öffentliche Web-Studio-Demo:** Direkt im Browser unter **[omrkit-studio.onrender.com](https://omrkit-studio.onrender.com/)** testen (**EN · TR · ZH · DE · RU · ES**). Klicken Sie oben auf **Beispieldaten**, erstellen Sie personalisierte Klassenpakete aus CSV oder scannen Sie Lösungsbögen direkt ohne JSON. *(Render Free Tier; Kaltstart ca. 20–30 s.)*
 
 ---
 
-## Kernfunktionen (v2.2)
+## Kernfunktionen (v2.3)
 
+- **Unterrichts- & Lehrkraft-Workflows (Neu):**
+  - **Klassenlisten-Seriendruck (`--roster class.csv` + `OMRKIT:v3`-QR):** Personalisierte mehrseitige PDF-Pakete mit Namen, ID, Klasse, Heftkennung und vorausgefüllten ID-Kreisen; beim Scannen automatische Schülerzuordnung ohne Kodierfehler.
+  - **Zero-JSON-Lösungsbogen-Scan (`omrkit key-from-sheet`):** Ausgefüllte Musterlösungen (1–4 Hefte, inkl. Mehrfachlösungen) direkt als `AnswerKey` einlesen.
+  - **Moodle & Canvas LMS-Export + Sammel-PDF & Ordnerüberwachung:** Direkter Moodle/Canvas-CSV-Import, gebündelte Klassen-Ergebnisblätter (`scorecards_pdf`) und `omrkit watch` für ADF-Scanner.
 - **Praxistaugliche Computer-Vision-Pipeline:**
   - **Radiergummi-Schmierfilter (`erased_dominance_ratio`):** Unterscheidet zuverlässig zwischen verblassten Radierspuren und echten Mehrfachmarkierungen (`multi_marked`), während helle HB-Bleistiftmarkierungen sicher erkannt werden.
   - **3-von-4-ArUco-Wiederherstellung (`aruco_3pt`):** Ist eine Ecke durch Finger, Heftklammer oder Knick verdeckt, berechnet OMRKit eine exakte 12-Punkt-Homographie aus den 3 sichtbaren Markern.
