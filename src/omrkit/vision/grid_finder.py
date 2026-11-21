@@ -121,13 +121,45 @@ def _split_row_segments(row: list[DetectedCircle], max_gap: float) -> list[list[
     return [seg for seg in segments if len(seg) >= 3]
 
 
+def _estimate_skew_angle(circles: list[DetectedCircle], median_r: float) -> float:
+    """Estimate dominant horizontal grid skew angle in degrees within [-12, +12]."""
+    angles: list[float] = []
+    max_dx = median_r * 7.5
+    min_dx = median_r * 1.6
+    max_dy = median_r * 2.5
+
+    for c in circles:
+        best_dist = float("inf")
+        best_angle: float | None = None
+        for other in circles:
+            dx = other.cx - c.cx
+            if dx < min_dx or dx > max_dx:
+                continue
+            dy = other.cy - c.cy
+            if abs(dy) > max_dy:
+                continue
+            dist = dx * dx + dy * dy
+            if dist < best_dist:
+                ang = math.degrees(math.atan2(dy, dx))
+                if abs(ang) <= 12.0:
+                    best_dist = dist
+                    best_angle = ang
+        if best_angle is not None:
+            angles.append(best_angle)
+
+    if len(angles) < 8:
+        return 0.0
+    return float(np.median(angles))
+
+
 def detect_layout_from_blank(
     image_bgr: np.ndarray,
     template_name: str = "auto_detected_template",
 ) -> tuple[Template, int]:
     """Automatically infer OMRKit FieldBlocks from a blank optical form image.
 
-    Returns (Template, total_bubbles_detected).
+    Automatically detects and corrects minor page tilt (up to +/-12 degrees) before
+    clustering rows and columns into FieldBlocks. Returns (Template, total_bubbles_detected).
     """
     h, w = image_bgr.shape[:2]
     circles = _find_candidate_bubbles(image_bgr)
@@ -138,6 +170,22 @@ def detect_layout_from_blank(
         )
 
     median_r = float(np.median([c.radius for c in circles]))
+    skew_deg = _estimate_skew_angle(circles, median_r)
+    if abs(skew_deg) >= 0.4:
+        rot_mat = cv2.getRotationMatrix2D((w / 2.0, h / 2.0), skew_deg, 1.0)
+        deskewed = cv2.warpAffine(
+            image_bgr,
+            rot_mat,
+            (w, h),
+            flags=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=(255, 255, 255),
+        )
+        deskewed_circles = _find_candidate_bubbles(deskewed)
+        if len(deskewed_circles) >= max(4, int(len(circles) * 0.75)):
+            circles = deskewed_circles
+            median_r = float(np.median([c.radius for c in circles]))
+
     rows = _cluster_rows(circles, y_tol=median_r * 0.9)
 
     # Estimate typical intra-group spacing from nearest horizontal neighbor distances

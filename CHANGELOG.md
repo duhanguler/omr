@@ -2,6 +2,23 @@
 
 All notable changes to **OMRKit** are documented in this file.
 
+## [2.2.0] - 2026-11-21
+
+### Improved — Core CV, Registration, PDF & API
+- **Erased Pencil Smudge Resilience (`omrkit.vision.detector`, `omrkit.models.template`):** Added `erased_dominance_ratio` (default `0.58`) darkness-dominance filtering and darkness-weighted runner-up separation so faint erased pencil smudges (`tone ~170`) no longer trigger false `multi_marked` flags while preserving 100% detection of true double marks and light HB pencil fills.
+- **3-of-4 Occluded ArUco Recovery (`omrkit.vision.registration`, `omrkit.core.scanner`):** Retains all 4 subpixel corners per detected ArUco marker and automatically falls back to a 12-point (`3×4`) homography (`method="aruco_3pt"`) with an informational warning whenever one corner fiducial is occluded by a thumb, staple, or fold — tested across all 4 corners under 90° rotation and perspective skew.
+- **Block-Level Photocopy Drift Micro-Alignment (`omrkit.vision.detector`):** Added `local_refinement` (`±6px` default `local_refinement_px`) using Sobel edge magnitude correlation against synthetic circular rims to snap drifted photocopy blocks cleanly onto bubble centers.
+- **Auto-Deskew Blank-Form Grid Finder (`omrkit.vision.grid_finder`):** Automatically estimates and corrects page tilt (`±12°`) before circular bubble clustering in `detect_layout_from_blank()`, preventing fragmented blocks on skewed scans.
+- **Native Unicode / Turkish PDF Typography (`omrkit.io.pdf_fonts`, `omrkit.generator`, `omrkit.io.exporters`, `Dockerfile`):** Auto-discovers system TrueType Unicode fonts (`LiberationSans` / `DejaVuSans` / `Arial`, bundled via `fonts-liberation` in Docker) so generated optical sheets and student PDF scorecards render native Turkish/European diacritics (`İ, Ş, Ğ, Ü, Ö, Ç`) cleanly with graceful Helvetica fallback.
+- **Zoomed HITL Bubble-Strip Crops (`omrkit.api.routes`):** Returns per-flag magnified JPEG bubble-strip crops (`review_crops`) and canonical `sheet_dimensions` in `/api/scan` and `/api/demo/cohort`.
+
+### Improved — Web Studio Craft & Global Multilingual Support
+- **Swiss Optical Workbench UI (`studio/`):** Ground-up typographic and visual refinement using `IBM Plex Sans` + `IBM Plex Mono`, `tabular-nums`, crisp 1px architectural rules, warm archival vellum (`#F4F2EC`), geometric optical crosshair branding, and telemetry footer bars.
+- **6-Language Interface & Documentation:** Added zero-dependency 6-language UI switcher (`EN · TR · ZH · DE · RU · ES`) in `studio/src/i18n.ts` and native multilingual READMEs (`README.md`, `README.tr.md`, `README.zh.md`, `README.de.md`, `README.ru.md`, `README.es.md`).
+- **Scan & Review HITL Speed-Triage:** Embedded zoomed bubble-strip crops inside flagged review cards, live SVG bounding-box corner reticles on the optical viewport, `Fit`/zoom controls, and keyboard speed-triage (`A–E`, `Backspace`, `↑/↓`).
+- **Template Designer Direct Manipulation:** Click-to-select and drag-to-move existing blocks directly on the HTML5 canvas, arrow-key micro-nudging (`1px` / `Shift+Arrow 10px`), Undo/Redo stack (`Ctrl+Z` / `Ctrl+Shift+Z`), and live cursor pixel coordinate readout.
+- **Sheet Generator & Analytics Upgrades:** Added print-spec telemetry bar and direct **Print PDF** action in Sheet Generator; added interactive histogram hover readout, sortable student scoreboard, CTT quality filter tabs (`All | Poor D | Hard | Easy`), and proportional inline option-distribution micro-bars in Analytics.
+
 ## [2.1.1] - 2026-11-20
 
 ### Security

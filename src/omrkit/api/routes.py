@@ -102,6 +102,33 @@ def _encode_overlay(warped_bgr: np.ndarray, result: SheetResult) -> str:
     return _encode_image_data_url(annotated, fmt=".jpg", quality=85)
 
 
+def _extract_review_crops(warped_bgr: np.ndarray, result: SheetResult) -> dict[str, str]:
+    """Extract crisp zoomed JPEG bubble-strip crops for every HITL review item."""
+    if not result.review_items:
+        return {}
+    h, w = warped_bgr.shape[:2]
+    crops: dict[str, str] = {}
+    for item in result.review_items:
+        x1, y1, x2, y2 = item.bbox
+        cx1 = max(0, x1 - 10)
+        cy1 = max(0, y1 - 8)
+        cx2 = min(w, x2 + 10)
+        cy2 = min(h, y2 + 8)
+        if cx2 - cx1 < 12 or cy2 - cy1 < 12:
+            continue
+        patch = warped_bgr[cy1:cy2, cx1:cx2]
+        ph, pw = patch.shape[:2]
+        if max(ph, pw) > 480:
+            scale = 480.0 / float(max(ph, pw))
+            patch = cv2.resize(
+                patch,
+                (max(16, round(pw * scale)), max(16, round(ph * scale))),
+                interpolation=cv2.INTER_AREA,
+            )
+        crops[item.field_id] = _encode_image_data_url(patch, fmt=".jpg", quality=88)
+    return crops
+
+
 class GradeRequest(BaseModel):
     """Request body for grading scanned sheets with an answer key and policy."""
 
@@ -358,6 +385,8 @@ async def scan_uploaded_sheets(
 
     sheets: list[dict[str, Any]] = []
     overlays: dict[str, str] = {}
+    review_crops: dict[str, dict[str, str]] = {}
+    sheet_dimensions: dict[str, tuple[int, int]] = {}
     seen_ids: dict[str, int] = {}
     total_elapsed = 0.0
     flagged_count = 0
@@ -421,8 +450,14 @@ async def scan_uploaded_sheets(
                 flagged_count += 1
             sheets.append(result.model_dump(mode="json"))
 
-            if include_overlay and warped_bgr is not None:
-                overlays[result.sheet_id] = _encode_overlay(warped_bgr, result)
+            if warped_bgr is not None:
+                wh, ww = warped_bgr.shape[:2]
+                sheet_dimensions[result.sheet_id] = (ww, wh)
+                if include_overlay:
+                    overlays[result.sheet_id] = _encode_overlay(warped_bgr, result)
+                crops = _extract_review_crops(warped_bgr, result)
+                if crops:
+                    review_crops[result.sheet_id] = crops
 
     return {
         "template_name": template_name,
@@ -432,6 +467,8 @@ async def scan_uploaded_sheets(
         "total_elapsed_ms": round(total_elapsed, 2),
         "sheets": sheets,
         "overlays": overlays,
+        "review_crops": review_crops,
+        "sheet_dimensions": sheet_dimensions,
     }
 
 
@@ -459,6 +496,8 @@ def run_one_click_demo_cohort(preset_id: str = "quick_quiz_20") -> dict[str, Any
 
     scanned_sheets: list[SheetResult] = []
     overlays: dict[str, str] = {}
+    review_crops: dict[str, dict[str, str]] = {}
+    sheet_dimensions: dict[str, tuple[int, int]] = {}
     total_elapsed = 0.0
 
     for idx, (sid, skill, rot, persp, shadow, style, inject_hitl) in enumerate(profiles):
@@ -502,7 +541,12 @@ def run_one_click_demo_cohort(preset_id: str = "quick_quiz_20") -> dict[str, Any
         total_elapsed += res.elapsed_ms
         scanned_sheets.append(res)
         if warped is not None:
+            wh, ww = warped.shape[:2]
+            sheet_dimensions[res.sheet_id] = (ww, wh)
             overlays[res.sheet_id] = _encode_overlay(warped, res)
+            crops = _extract_review_crops(warped, res)
+            if crops:
+                review_crops[res.sheet_id] = crops
 
     policy = GradingPolicy.preset("yks_tyt")
     report = ExamGrader(answer_key, policy).grade_batch(scanned_sheets)
@@ -518,6 +562,8 @@ def run_one_click_demo_cohort(preset_id: str = "quick_quiz_20") -> dict[str, Any
             "total_elapsed_ms": round(total_elapsed, 2),
             "sheets": [s.model_dump(mode="json") for s in scanned_sheets],
             "overlays": overlays,
+            "review_crops": review_crops,
+            "sheet_dimensions": sheet_dimensions,
         },
         "grading_report": report.model_dump(mode="json"),
     }

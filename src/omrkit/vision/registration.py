@@ -100,7 +100,7 @@ def _register_aruco(image_bgr: np.ndarray, template: Template) -> RegistrationRe
     gray = ensure_grayscale(image_bgr)
     required_ids = list(cfg.aruco_ids)
 
-    def _detect_centers(img: np.ndarray, inv_scale: float = 1.0) -> dict[int, np.ndarray]:
+    def _detect_markers(img: np.ndarray, inv_scale: float = 1.0) -> dict[int, np.ndarray]:
         corners, ids, _ = detector.detectMarkers(img)
         found: dict[int, np.ndarray] = {}
         if ids is None:
@@ -108,17 +108,17 @@ def _register_aruco(image_bgr: np.ndarray, template: Template) -> RegistrationRe
         for marker_corners, marker_id_val in zip(corners, np.asarray(ids).ravel(), strict=False):
             mid = int(marker_id_val)
             if mid in required_ids:
-                center = np.asarray(marker_corners, dtype=np.float32).reshape(-1, 2).mean(axis=0)
-                found[mid] = center * inv_scale
+                pts4 = np.asarray(marker_corners, dtype=np.float32).reshape(4, 2) * inv_scale
+                found[mid] = pts4
         return found
 
     # Attempt 1: Native resolution grayscale
-    found = _detect_centers(gray, 1.0)
+    found = _detect_markers(gray, 1.0)
 
     # Attempt 2: CLAHE contrast-enhanced grayscale (helps shadowed phone photos)
     if len(found) < 4:
         clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
-        found_clahe = _detect_centers(clahe.apply(gray), 1.0)
+        found_clahe = _detect_markers(clahe.apply(gray), 1.0)
         if len(found_clahe) > len(found):
             found = found_clahe
 
@@ -130,28 +130,96 @@ def _register_aruco(image_bgr: np.ndarray, template: Template) -> RegistrationRe
             (int(gray.shape[1] * scale), int(gray.shape[0] * scale)),
             interpolation=cv2.INTER_AREA,
         )
-        found_small = _detect_centers(small, 1.0 / scale)
+        found_small = _detect_markers(small, 1.0 / scale)
         if len(found_small) > len(found):
             found = found_small
 
-    if len(found) < 4:
-        missing = [mid for mid in required_ids if mid not in found]
-        raise RegistrationError(
-            f"ArUco registration failed: detected {len(found)}/4 markers (missing IDs: {missing})."
+    dst_pts = _default_target_corners(template)
+
+    if len(found) == 4:
+        src_pts = np.asarray([found[mid].mean(axis=0) for mid in required_ids], dtype=np.float32)
+        rotation = _infer_rotation_from_top_edge(src_pts[0], src_pts[1])
+        warped = _warp_from_corners(
+            image_bgr, src_pts, dst_pts, template.page_width, template.page_height
+        )
+        return RegistrationResult(
+            warped_bgr=warped,
+            method="aruco",
+            score=1.0,
+            rotation_deg=rotation,
+            source_corners=[(float(p[0]), float(p[1])) for p in src_pts],
         )
 
-    src_pts = np.asarray([found[mid] for mid in required_ids], dtype=np.float32)
-    dst_pts = _default_target_corners(template)
-    rotation = _infer_rotation_from_top_edge(src_pts[0], src_pts[1])
-    warped = _warp_from_corners(
-        image_bgr, src_pts, dst_pts, template.page_width, template.page_height
-    )
-    return RegistrationResult(
-        warped_bgr=warped,
-        method="aruco",
-        score=1.0,
-        rotation_deg=rotation,
-        source_corners=[(float(p[0]), float(p[1])) for p in src_pts],
+    # 3-of-4 Occluded ArUco Recovery: use all 12 subpixel inner corners (3 markers x 4 corners)
+    # to recover the full 2D projective homography even when a thumb/staple covers 1 corner.
+    if len(found) == 3:
+        present_indices = [idx for idx, mid in enumerate(required_ids) if mid in found]
+        src_centers_3 = np.asarray(
+            [found[required_ids[idx]].mean(axis=0) for idx in present_indices], dtype=np.float32
+        )
+        dst_centers_3 = np.asarray([dst_pts[idx] for idx in present_indices], dtype=np.float32)
+        affine_mat = cv2.getAffineTransform(src_centers_3, dst_centers_3)
+
+        # Estimate the canonical black-square half-width in target pixels from the 3 visible markers
+        half_extents: list[float] = []
+        for idx in present_indices:
+            pts4 = found[required_ids[idx]]
+            ones = np.ones((4, 1), dtype=np.float32)
+            mapped = (np.hstack([pts4, ones]) @ affine_mat.T).astype(np.float32)
+            dx_span = (
+                float(np.linalg.norm(mapped[1] - mapped[0]) + np.linalg.norm(mapped[2] - mapped[3]))
+                * 0.25
+            )
+            dy_span = (
+                float(np.linalg.norm(mapped[3] - mapped[0]) + np.linalg.norm(mapped[2] - mapped[1]))
+                * 0.25
+            )
+            half_extents.extend([dx_span, dy_span])
+        half_side = float(np.median(half_extents)) if half_extents else 24.0
+
+        src_12_list: list[np.ndarray] = []
+        dst_12_list: list[np.ndarray] = []
+        for idx in present_indices:
+            cx, cy = float(dst_pts[idx][0]), float(dst_pts[idx][1])
+            src_12_list.append(found[required_ids[idx]])
+            dst_12_list.append(
+                np.asarray(
+                    [
+                        [cx - half_side, cy - half_side],
+                        [cx + half_side, cy - half_side],
+                        [cx + half_side, cy + half_side],
+                        [cx - half_side, cy + half_side],
+                    ],
+                    dtype=np.float32,
+                )
+            )
+        src_12 = np.vstack(src_12_list)
+        dst_12 = np.vstack(dst_12_list)
+
+        homography, _ = cv2.findHomography(src_12, dst_12, 0)
+        if homography is not None:
+            warped = cv2.warpPerspective(
+                image_bgr,
+                homography,
+                (template.page_width, template.page_height),
+                flags=cv2.INTER_LINEAR,
+                borderMode=cv2.BORDER_CONSTANT,
+                borderValue=(255, 255, 255),
+            )
+            # Infer top-edge direction from first visible marker's own TL->TR edge
+            m0 = found[required_ids[present_indices[0]]]
+            rotation = _infer_rotation_from_top_edge(m0[0], m0[1])
+            return RegistrationResult(
+                warped_bgr=warped,
+                method="aruco_3pt",
+                score=0.92,
+                rotation_deg=rotation,
+                source_corners=[(float(p[0]), float(p[1])) for p in src_centers_3],
+            )
+
+    missing = [mid for mid in required_ids if mid not in found]
+    raise RegistrationError(
+        f"ArUco registration failed: detected {len(found)}/4 markers (missing IDs: {missing})."
     )
 
 

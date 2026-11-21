@@ -15,6 +15,7 @@ from reportlab.pdfgen import canvas as rl_canvas
 
 from omrkit._version import __version__
 from omrkit.generator.presets import SheetSpec
+from omrkit.io.pdf_fonts import get_pdf_fonts
 from omrkit.models.grading import AnswerKey
 from omrkit.models.template import (
     DetectionConfig,
@@ -63,17 +64,12 @@ def _qr_image_reader(preset_id: str, pixel_size: int = 220) -> ImageReader:
     return ImageReader(buf)
 
 
-def _ascii_safe(text: str) -> str:
-    """Transliterate Turkish diacritics cleanly for built-in PDF Helvetica fonts."""
-    table = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
-    return text.translate(table)
-
-
 class SheetGenerator:
     """Generates print-ready vector PDF OMR sheets alongside mathematically exact Templates."""
 
     def generate(self, spec: SheetSpec) -> GeneratedSheet:
         """Render the PDF in memory and construct its zero-calibration Template."""
+        fonts = get_pdf_fonts()
         page_w_mm, page_h_mm = _PAGE_DIMENSIONS_MM[spec.page_format]
         dpi = spec.dpi
         mm_to_px = dpi / 25.4
@@ -84,7 +80,7 @@ class SheetGenerator:
 
         buf = io.BytesIO()
         pdf = rl_canvas.Canvas(buf, pagesize=(page_w_pt, page_h_pt))
-        pdf.setTitle(_ascii_safe(spec.title))
+        pdf.setTitle(fonts.format_text(spec.title))
         pdf.setAuthor(f"OMRKit v{__version__}")
 
         def x_pt(x_mm: float) -> float:
@@ -126,11 +122,11 @@ class SheetGenerator:
         header_bg = colors.HexColor("#F4F6F8")
 
         pdf.setFillColor(ink)
-        pdf.setFont("Helvetica-Bold", 14)
-        pdf.drawCentredString(page_w_pt / 2.0, y_pt(13.0), _ascii_safe(spec.title))
+        pdf.setFont(fonts.bold, 13.5)
+        pdf.drawCentredString(page_w_pt / 2.0, y_pt(13.0), fonts.format_text(spec.title))
         pdf.setFillColor(muted)
-        pdf.setFont("Helvetica", 8.5)
-        pdf.drawCentredString(page_w_pt / 2.0, y_pt(18.5), _ascii_safe(spec.subtitle))
+        pdf.setFont(fonts.regular, 8.5)
+        pdf.drawCentredString(page_w_pt / 2.0, y_pt(18.5), fonts.format_text(spec.subtitle))
 
         # Name / Date box + embedded auto-detect QR template identifier
         qr_size_mm = 15.0
@@ -160,7 +156,7 @@ class SheetGenerator:
             fill=0,
         )
         pdf.setFillColor(muted)
-        pdf.setFont("Helvetica-Bold", 7.5)
+        pdf.setFont(fonts.bold, 7.5)
         pdf.drawString(x_pt(box_left + 3.0), y_pt(28.5), "NAME / SURNAME:")
         pdf.drawString(x_pt(box_right - 44.0), y_pt(28.5), "DATE:")
 
@@ -194,11 +190,11 @@ class SheetGenerator:
                 fill=1,
             )
             pdf.setFillColor(ink)
-            pdf.setFont("Helvetica-Bold", 7.5)
+            pdf.setFont(fonts.bold, 7.5)
             pdf.drawCentredString(
                 x_pt(cursor_x + grid_w / 2.0),
                 y_pt(id_row_top + 4.3),
-                _ascii_safe(grid.title.upper()),
+                fonts.format_text(grid.title.upper()),
             )
 
             # Outer grid frame
@@ -229,7 +225,12 @@ class SheetGenerator:
                 for opt_idx, opt in enumerate(grid.options):
                     cy_mm = first_cy + opt_idx * id_bubbles_gap_mm
                     self._draw_bubble(
-                        pdf, x_pt(cx_mm), y_pt(cy_mm), id_bubble_r_mm * _MM_TO_PT, opt
+                        pdf,
+                        x_pt(cx_mm),
+                        y_pt(cy_mm),
+                        id_bubble_r_mm * _MM_TO_PT,
+                        opt,
+                        fonts.regular,
                     )
 
             prefix = grid.name.lower()
@@ -270,7 +271,7 @@ class SheetGenerator:
                 fill=1,
             )
             pdf.setFillColor(ink)
-            pdf.setFont("Helvetica-Bold", 7.5)
+            pdf.setFont(fonts.bold, 7.5)
             pdf.drawCentredString(x_pt(bk_x + bk_w / 2.0), y_pt(id_row_top + 4.3), "BOOKLET")
             pdf.rect(
                 x_pt(bk_x),
@@ -292,6 +293,7 @@ class SheetGenerator:
                     y_pt(bk_cy),
                     bk_r * _MM_TO_PT,
                     opt,
+                    fonts.regular,
                 )
 
             blocks.append(
@@ -352,7 +354,7 @@ class SheetGenerator:
                 fill=1,
             )
             pdf.setFillColor(ink)
-            pdf.setFont("Helvetica-Bold", 7.2)
+            pdf.setFont(fonts.bold, 7.2)
             pdf.drawCentredString(
                 x_pt(col_x + col_w_mm / 2.0),
                 y_pt(answers_top + 4.7),
@@ -389,7 +391,7 @@ class SheetGenerator:
                     )
 
                 pdf.setFillColor(ink)
-                pdf.setFont("Helvetica-Bold", 7.0)
+                pdf.setFont(fonts.bold, 7.0)
                 pdf.drawRightString(
                     x_pt(col_x + q_label_pad_mm - 1.4),
                     y_pt(cy_mm + 0.9),
@@ -398,7 +400,9 @@ class SheetGenerator:
 
                 for opt_idx, opt in enumerate(spec.options):
                     cx_mm = first_bubble_x + opt_idx * opt_gap_mm
-                    self._draw_bubble(pdf, x_pt(cx_mm), y_pt(cy_mm), bubble_r_mm * _MM_TO_PT, opt)
+                    self._draw_bubble(
+                        pdf, x_pt(cx_mm), y_pt(cy_mm), bubble_r_mm * _MM_TO_PT, opt, fonts.regular
+                    )
 
                 sample_answers[f"{spec.question_prefix}{q_num}"] = spec.options[
                     (q_num - 1) % len(spec.options)
@@ -424,7 +428,7 @@ class SheetGenerator:
 
         # Footer note
         pdf.setFillColor(muted)
-        pdf.setFont("Helvetica", 7.0)
+        pdf.setFont(fonts.regular, 7.0)
         pdf.drawCentredString(
             page_w_pt / 2.0,
             y_pt(page_h_mm - 11.5),
@@ -476,6 +480,7 @@ class SheetGenerator:
         cy_pt: float,
         radius_pt: float,
         label: str,
+        font_name: str = "Helvetica",
     ) -> None:
         """Draw a clean light-outlined circular bubble with a soft interior letter."""
         pdf.setStrokeColor(colors.HexColor("#7B8794"))
@@ -485,7 +490,7 @@ class SheetGenerator:
 
         pdf.setFillColor(colors.HexColor("#B8C2CC"))
         font_size = max(4.8, radius_pt * 1.05)
-        pdf.setFont("Helvetica", font_size)
+        pdf.setFont(font_name, font_size)
         pdf.drawCentredString(cx_pt, cy_pt - font_size * 0.34, label)
 
     def generate_to_dir(self, spec: SheetSpec, output_dir: str | Path) -> dict[str, Path]:

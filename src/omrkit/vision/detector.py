@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from functools import lru_cache
 
+import cv2
 import numpy as np
 
 from omrkit.models.scan import BubbleReading, FieldReading, FieldStatus, ReviewItem
@@ -35,13 +36,75 @@ def _radial_masks(
 class HybridBubbleDetector:
     """Evaluates bubble markings using fill ratio, ring contrast, and ink stroke density.
 
-    Handles solid fills, partial fills, pen checkmarks/crosses, printed letters inside
-    bubbles, and uneven shadows while emitting calibrated per-field confidence scores
-    and Human-in-the-Loop (HITL) review flags.
+    Handles solid fills, partial fills, pen checkmarks/crosses, erased pencil smudges,
+    printed letters inside bubbles, local photocopy drift, and uneven shadows while
+    emitting calibrated per-field confidence scores and HITL review flags.
     """
 
     def __init__(self, config: DetectionConfig | None = None) -> None:
         self.config = config or DetectionConfig()
+
+    @staticmethod
+    def _estimate_block_offset(
+        proc_gray: np.ndarray,
+        block_coords: list[tuple[str, list[BubbleCoord]]],
+        radius: float,
+        max_shift: int,
+    ) -> tuple[float, float]:
+        """Estimate local (dx, dy) photocopy/paper drift for a block via ring-edge correlation."""
+        if max_shift <= 0 or not block_coords:
+            return 0.0, 0.0
+
+        all_c = [c for _, coords in block_coords for c in coords]
+        if len(all_c) < 4:
+            return 0.0, 0.0
+
+        h, w = proc_gray.shape[:2]
+        pad = max(8, math.ceil(radius * 1.45))
+        inner_x1 = max(0, math.floor(min(c.cx for c in all_c)) - pad)
+        inner_y1 = max(0, math.floor(min(c.cy for c in all_c)) - pad)
+        inner_x2 = min(w, math.ceil(max(c.cx for c in all_c)) + pad)
+        inner_y2 = min(h, math.ceil(max(c.cy for c in all_c)) + pad)
+
+        roi_x1 = inner_x1 - max_shift
+        roi_y1 = inner_y1 - max_shift
+        roi_x2 = inner_x2 + max_shift
+        roi_y2 = inner_y2 + max_shift
+        if roi_x1 < 0 or roi_y1 < 0 or roi_x2 > w or roi_y2 > h:
+            return 0.0, 0.0
+
+        tmpl_w = inner_x2 - inner_x1
+        tmpl_h = inner_y2 - inner_y1
+        if tmpl_w < 16 or tmpl_h < 16:
+            return 0.0, 0.0
+
+        roi = proc_gray[roi_y1:roi_y2, roi_x1:roi_x2]
+        gx = cv2.Sobel(roi, cv2.CV_32F, 1, 0, ksize=3)
+        gy = cv2.Sobel(roi, cv2.CV_32F, 0, 1, ksize=3)
+        edge_mag = cv2.magnitude(gx, gy)
+        edge_max = float(np.max(edge_mag))
+        if edge_max < 1e-3:
+            return 0.0, 0.0
+        edge_norm = (edge_mag * (255.0 / edge_max)).astype(np.float32)
+
+        ring_tmpl = np.zeros((tmpl_h, tmpl_w), dtype=np.float32)
+        ring_r = max(3, round(radius))
+        for c in all_c:
+            lx = round(c.cx - inner_x1)
+            ly = round(c.cy - inner_y1)
+            cv2.circle(ring_tmpl, (lx, ly), ring_r, 255.0, 2, cv2.LINE_AA)
+
+        res = cv2.matchTemplate(edge_norm, ring_tmpl, cv2.TM_CCOEFF_NORMED)
+        zero_score = float(res[max_shift, max_shift])
+        _, max_val, _, max_loc = cv2.minMaxLoc(res)
+        best_score = float(max_val)
+
+        if best_score < 0.14 or (best_score - zero_score) < 0.03:
+            return 0.0, 0.0
+
+        dx = float(max_loc[0] - max_shift)
+        dy = float(max_loc[1] - max_shift)
+        return dx, dy
 
     def measure_bubble(self, gray: np.ndarray, coord: BubbleCoord) -> BubbleReading:
         """Compute multi-feature optical scores for a single bubble coordinate."""
@@ -101,7 +164,7 @@ class HybridBubbleDetector:
 
         combined = float(
             np.clip(
-                0.48 * fill_ratio + 0.32 * darkness + 0.20 * min(1.0, ink_score * 2.2),
+                0.44 * fill_ratio + 0.36 * darkness + 0.20 * min(1.0, ink_score * 2.2),
                 0.0,
                 1.0,
             )
@@ -137,9 +200,30 @@ class HybridBubbleDetector:
         all_scores: list[float] = []
 
         for block in template.blocks:
+            raw_fields = block.iter_field_bubbles()
+            dx, dy = (
+                self._estimate_block_offset(
+                    proc, raw_fields, block.bubble_radius, cfg.local_refinement_px
+                )
+                if cfg.local_refinement and cfg.local_refinement_px > 0
+                else (0.0, 0.0)
+            )
             block_fields: list[tuple[str, list[BubbleReading]]] = []
-            for field_id, coords in block.iter_field_bubbles():
-                readings = [self.measure_bubble(proc, c) for c in coords]
+            for field_id, coords in raw_fields:
+                if dx != 0.0 or dy != 0.0:
+                    shifted_coords = [
+                        BubbleCoord(
+                            field_id=c.field_id,
+                            option=c.option,
+                            cx=round(c.cx + dx, 2),
+                            cy=round(c.cy + dy, 2),
+                            radius=c.radius,
+                        )
+                        for c in coords
+                    ]
+                else:
+                    shifted_coords = coords
+                readings = [self.measure_bubble(proc, c) for c in shifted_coords]
                 all_scores.extend(r.combined_score for r in readings)
                 block_fields.append((field_id, readings))
             measured_blocks.append((block, block_fields))
@@ -188,10 +272,23 @@ class HybridBubbleDetector:
         top_idx = ranked_indices[0]
         top_raw = scores[top_idx]
         top_eff = effective_scores[top_idx]
+        top_dark = readings[top_idx].darkness
         second_idx = ranked_indices[1] if len(ranked_indices) > 1 else None
         second_raw = scores[second_idx] if second_idx is not None else 0.0
         second_eff = effective_scores[second_idx] if second_idx is not None else 0.0
+        second_dark = readings[second_idx].darkness if second_idx is not None else 0.0
         gap = top_eff - second_eff
+
+        # Darkness-dominant check: a dark solid mark next to a faint erased pencil smudge
+        # exhibits a steep darkness drop even when binary fill_ratio saturates on the smudge.
+        darkness_dominant_over_second = (
+            second_idx is not None
+            and top_dark >= 0.48
+            and second_dark < top_dark * cfg.erased_dominance_ratio
+        )
+        effective_gap = (
+            max(gap, (top_dark - second_dark) * 0.85) if darkness_dominant_over_second else gap
+        )
 
         mark_delta_thresh = max(0.16, cfg.fill_threshold - 0.06)
         blank_delta_floor = max(0.08, cfg.blank_floor - 0.04)
@@ -209,7 +306,7 @@ class HybridBubbleDetector:
 
         # Case 2: Borderline faint mark or smudge
         elif top_eff < mark_delta_thresh:
-            if gap >= cfg.min_separation and readings[top_idx].ink_score >= 0.14:
+            if effective_gap >= cfg.min_separation and readings[top_idx].ink_score >= 0.14:
                 selected_indices = [top_idx]
                 status = "low_confidence"
                 confidence = round(
@@ -218,7 +315,7 @@ class HybridBubbleDetector:
                 )
                 review_msg = (
                     f"Faint or partial mark detected on '{readings[top_idx].option}' "
-                    f"(delta={top_eff:.2f}, gap={gap:.2f})."
+                    f"(delta={top_eff:.2f}, gap={effective_gap:.2f})."
                 )
             else:
                 status = "low_confidence"
@@ -240,6 +337,11 @@ class HybridBubbleDetector:
                 for i in ranked_indices
                 if effective_scores[i] >= mark_delta_thresh
                 and effective_scores[i] >= top_eff * cfg.multi_mark_ratio
+                and (
+                    i == top_idx
+                    or top_dark < 0.48
+                    or readings[i].darkness >= top_dark * cfg.erased_dominance_ratio
+                )
             ]
             if not marked:
                 marked = [top_idx]
@@ -257,12 +359,15 @@ class HybridBubbleDetector:
             else:
                 selected_indices = [top_idx]
                 strength = min(1.0, top_eff / max(mark_delta_thresh * 1.5, 1e-6))
-                sep_score = min(1.0, gap / max(cfg.min_separation * 1.5, 1e-6))
+                sep_score = min(1.0, effective_gap / max(cfg.min_separation * 1.5, 1e-6))
                 confidence = round(
                     float(np.clip(0.45 + 0.30 * strength + 0.25 * sep_score, 0.45, 0.995)),
                     4,
                 )
-                if gap < cfg.min_separation or confidence < cfg.review_confidence_threshold:
+                if (
+                    effective_gap < cfg.min_separation
+                    or confidence < cfg.review_confidence_threshold
+                ):
                     status = "low_confidence"
                     runner_up = readings[second_idx].option if second_idx is not None else "-"
                     review_msg = (

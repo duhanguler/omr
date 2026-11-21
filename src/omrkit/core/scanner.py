@@ -85,6 +85,10 @@ class OMRScanner:
         # Assemble grouped values (e.g., multi-column Student ID / TC Kimlik No)
         grouped_values: dict[str, str] = {}
         warnings: list[str] = []
+        if reg.method == "aruco_3pt":
+            warnings.append(
+                "One ArUco corner marker was occluded; alignment was recovered from 3 visible markers."
+            )
 
         for block in self.template.blocks:
             labels = block.expanded_labels()

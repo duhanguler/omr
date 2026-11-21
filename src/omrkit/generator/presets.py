@@ -124,15 +124,20 @@ def get_sheet_presets() -> dict[str, SheetSpec]:
         ),
         "turkish_exam_50": SheetSpec(
             preset_id="turkish_exam_50",
-            title="OPTIK CEVAP KAGIDI — 50 SORU",
-            subtitle="Kodlamalari koyu kursun kalem ile daire disina tasirmadan yapiniz.",
+            title="OPTİK CEVAP KAĞIDI — 50 SORU",
+            subtitle="Kodlamaları koyu kurşun kalem ile daire dışına taşırmadan yapınız.",  # noqa: RUF001
             num_questions=50,
             options=["A", "B", "C", "D", "E"],
             questions_per_column=25,
             include_booklet=True,
             booklet_options=["A", "B", "C", "D"],
             id_grids=[
-                IdGridSpec(name="SINAV_KODU", title="Sinav Kodu", digits=6, validator="digits"),
+                IdGridSpec(
+                    name="SINAV_KODU",
+                    title="Sınav Kodu",  # noqa: RUF001
+                    digits=6,
+                    validator="digits",
+                ),
                 IdGridSpec(
                     name="TC_KIMLIK_NO", title="TC Kimlik No", digits=11, validator="tr_tckn"
                 ),
@@ -140,15 +145,15 @@ def get_sheet_presets() -> dict[str, SheetSpec]:
         ),
         "turkish_yks_120": SheetSpec(
             preset_id="turkish_yks_120",
-            title="YKS / TYT DENEME OPTIK FORMU — 120 SORU",
-            subtitle="Turkce (1-40) | Sosyal (41-60) | Matematik (61-100) | Fen (101-120)",
+            title="YKS / TYT DENEME OPTİK FORMU — 120 SORU",
+            subtitle="Türkçe (1–40) | Sosyal (41–60) | Matematik (61–100) | Fen (101–120)",  # noqa: RUF001
             num_questions=120,
             options=["A", "B", "C", "D", "E"],
             questions_per_column=30,
             include_booklet=True,
             booklet_options=["A", "B", "C", "D"],
             id_grids=[
-                IdGridSpec(name="OGRENCI_NO", title="Ogrenci No", digits=8, validator="digits")
+                IdGridSpec(name="OGRENCI_NO", title="Öğrenci No", digits=8, validator="digits")
             ],
         ),
     }

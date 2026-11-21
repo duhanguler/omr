@@ -4,23 +4,32 @@ import {
   Camera,
   CameraOff,
   CheckCircle2,
+  Crosshair,
   QrCode,
   Radio,
   ScanLine,
-  Sparkles,
 } from "lucide-react";
 import { scanFiles } from "../api/client";
+import type { Dictionary } from "../i18n";
 import type { SheetResult, Template } from "../types";
 
 interface CameraScannerProps {
+  t: Dictionary;
   activeTemplate: Template | null;
-  onSheetCaptured: (sheet: SheetResult, overlayUrl?: string) => void;
+  onSheetCaptured: (
+    sheet: SheetResult,
+    overlayUrl?: string,
+    crops?: Record<string, string>,
+    dims?: [number, number]
+  ) => void;
   onGoToReview: () => void;
 }
 
 function playSuccessTone() {
   try {
-    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     const ctx = new AudioCtx();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -42,6 +51,7 @@ function playSuccessTone() {
 }
 
 export function CameraScanner({
+  t,
   activeTemplate,
   onSheetCaptured,
   onGoToReview,
@@ -55,6 +65,7 @@ export function CameraScanner({
   const flashTimerRef = useRef<number | null>(null);
 
   const [cameraActive, setCameraActive] = useState(false);
+  const [resolution, setResolution] = useState<string | null>(null);
   const [autoLock, setAutoLock] = useState(false);
   const [useQrAuto, setUseQrAuto] = useState(true);
   const [scanning, setScanning] = useState(false);
@@ -65,8 +76,9 @@ export function CameraScanner({
   const stopCamera = useCallback(() => {
     setAutoLock(false);
     setCameraActive(false);
+    setResolution(null);
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current.getTracks().forEach((tr) => tr.stop());
       streamRef.current = null;
     }
   }, []);
@@ -85,7 +97,7 @@ export function CameraScanner({
   async function startCamera() {
     setError(null);
     if (!navigator.mediaDevices?.getUserMedia) {
-      setError("Camera access is not available in this browser context (HTTPS or localhost required).");
+      setError("Camera access requires an HTTPS or localhost browser context.");
       return;
     }
     try {
@@ -98,10 +110,14 @@ export function CameraScanner({
         audio: false,
       });
       if (!mountedRef.current) {
-        stream.getTracks().forEach((t) => t.stop());
+        stream.getTracks().forEach((tr) => tr.stop());
         return;
       }
       streamRef.current = stream;
+      const settings = stream.getVideoTracks()[0]?.getSettings();
+      if (settings?.width && settings?.height) {
+        setResolution(`${settings.width}×${settings.height}`);
+      }
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
@@ -141,11 +157,9 @@ export function CameraScanner({
 
         captureSeqRef.current += 1;
         const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(11, 23);
-        const frameFile = new File(
-          [blob],
-          `camera_${stamp}_${captureSeqRef.current}.jpg`,
-          { type: "image/jpeg" }
-        );
+        const frameFile = new File([blob], `camera_${stamp}_${captureSeqRef.current}.jpg`, {
+          type: "image/jpeg",
+        });
         const targetTemplate = useQrAuto || !activeTemplate ? "auto" : activeTemplate;
         const res = await scanFiles([frameFile], targetTemplate);
         if (!mountedRef.current) return;
@@ -153,8 +167,10 @@ export function CameraScanner({
 
         if (sheet && !sheet.error) {
           const overlayUrl = res.overlays[sheet.sheet_id];
+          const crops = res.review_crops?.[sheet.sheet_id];
+          const dims = res.sheet_dimensions?.[sheet.sheet_id];
           setCaptured((prev) => [{ sheet, overlay: overlayUrl }, ...prev]);
-          onSheetCaptured(sheet, overlayUrl);
+          onSheetCaptured(sheet, overlayUrl, crops, dims);
           playSuccessTone();
           setFlashOk(true);
           if (flashTimerRef.current !== null) {
@@ -190,24 +206,27 @@ export function CameraScanner({
   }, [cameraActive, autoLock, captureFrameAndScan]);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-      {/* Left Live Viewfinder */}
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+      {/* Left Optical Viewfinder */}
       <section className="lg:col-span-7 paper-card overflow-hidden">
         <div className="px-4 py-3 border-b border-[var(--border-hairline)] flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold">Live Webcam / Mobile Camera Scanner</h2>
-            <p className="text-xs text-[var(--ink-muted)]">
-              Point your camera at any ArUco or marker optical sheet — auto-lock captures when all 4 corners align.
-            </p>
+            <h2 className="text-sm font-semibold">{t.cameraTitle}</h2>
+            <p className="text-xs text-[var(--ink-muted)]">{t.cameraSub}</p>
           </div>
           <div className="flex items-center gap-2">
+            {resolution && (
+              <span className="text-[11px] font-mono text-[var(--ink-muted)] px-2 py-0.5 rounded-[4px] bg-[var(--surface-subtle)] border border-[var(--border-hairline)]">
+                {resolution}
+              </span>
+            )}
             {!cameraActive ? (
               <button type="button" onClick={() => void startCamera()} className="btn-accent text-xs">
-                <Camera className="w-3.5 h-3.5" /> Start Camera
+                <Camera className="w-3.5 h-3.5" /> {t.startCamera}
               </button>
             ) : (
               <button type="button" onClick={stopCamera} className="btn-secondary text-xs">
-                <CameraOff className="w-3.5 h-3.5" /> Stop
+                <CameraOff className="w-3.5 h-3.5" /> {t.stopCamera}
               </button>
             )}
           </div>
@@ -215,7 +234,7 @@ export function CameraScanner({
 
         <div className="p-4 space-y-3">
           <div
-            className={`relative rounded-lg overflow-hidden bg-[#14181F] aspect-video flex items-center justify-center border-2 transition-colors ${
+            className={`relative rounded-[5px] overflow-hidden bg-[#111317] aspect-video flex items-center justify-center border-2 transition-colors ${
               flashOk ? "border-[var(--signal-ok)]" : "border-[var(--border-hairline)]"
             }`}
           >
@@ -227,29 +246,30 @@ export function CameraScanner({
             />
             <canvas ref={canvasRef} className="hidden" />
 
-            {/* Optical corner alignment guide brackets */}
+            {/* Precision Optical Corner Reticle */}
             {cameraActive && (
-              <div className="pointer-events-none absolute inset-6 border border-white/25 rounded">
+              <div className="pointer-events-none absolute inset-6 border border-white/20">
                 <div className="absolute -top-0.5 -left-0.5 w-6 h-6 border-t-2 border-l-2 border-white" />
                 <div className="absolute -top-0.5 -right-0.5 w-6 h-6 border-t-2 border-r-2 border-white" />
                 <div className="absolute -bottom-0.5 -left-0.5 w-6 h-6 border-b-2 border-l-2 border-white" />
                 <div className="absolute -bottom-0.5 -right-0.5 w-6 h-6 border-b-2 border-r-2 border-white" />
+                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 border border-white/30 rounded-full" />
               </div>
             )}
 
             {!cameraActive && (
               <div className="text-center text-white/75 space-y-2 p-6">
-                <Camera className="w-9 h-9 mx-auto opacity-70" />
-                <p className="text-sm font-medium text-white">Camera viewfinder offline</p>
-                <p className="text-xs text-white/60 max-w-sm">
-                  Click <strong>Start Camera</strong> to scan printed ArUco sheets in real time from a webcam or mobile phone browser.
+                <Crosshair className="w-8 h-8 mx-auto opacity-60" />
+                <p className="text-xs font-mono uppercase tracking-wider text-white">
+                  {t.cameraOffline}
                 </p>
+                <p className="text-xs text-white/60 max-w-sm">{t.cameraOfflineSub}</p>
               </div>
             )}
 
             {flashOk && (
-              <div className="absolute top-3 left-3 px-2.5 py-1 rounded bg-[var(--signal-ok)] text-white text-xs font-mono inline-flex items-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Sheet Locked & Captured
+              <div className="absolute top-3 left-3 px-2.5 py-1 rounded-[4px] bg-[var(--signal-ok)] text-white text-xs font-mono inline-flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5" /> {t.cameraLocked}
               </div>
             )}
           </div>
@@ -262,7 +282,7 @@ export function CameraScanner({
                 onChange={(e) => setUseQrAuto(e.target.checked)}
               />
               <QrCode className="w-3.5 h-3.5 text-[var(--ink-secondary)]" />
-              <span>Auto-detect template via sheet QR code</span>
+              <span>{t.cameraQrToggle}</span>
             </label>
 
             <div className="flex items-center gap-2">
@@ -272,8 +292,8 @@ export function CameraScanner({
                 onClick={() => setAutoLock((v) => !v)}
                 className={`text-xs ${autoLock ? "btn-primary" : "btn-secondary"}`}
               >
-                <Radio className={`w-3.5 h-3.5 ${autoLock ? "animate-pulse text-emerald-400" : ""}`} />
-                {autoLock ? "Auto-Lock ON" : "Auto-Lock OFF"}
+                <Radio className="w-3.5 h-3.5" />
+                {autoLock ? t.autoLockOn : t.autoLockOff}
               </button>
               <button
                 type="button"
@@ -282,54 +302,52 @@ export function CameraScanner({
                 className="btn-accent text-xs"
               >
                 <ScanLine className="w-3.5 h-3.5" />
-                {scanning ? "Scanning..." : "Capture & Scan"}
+                {scanning ? t.scanning : t.captureScan}
               </button>
             </div>
           </div>
 
           {error && (
-            <div className="text-xs p-2.5 rounded bg-[var(--signal-err-bg)] text-[var(--signal-err)] border border-red-200 font-mono">
+            <div className="text-xs p-2.5 rounded-[4px] bg-[var(--signal-err-bg)] text-[var(--signal-err)] border border-red-200 font-mono">
               {error}
             </div>
           )}
         </div>
       </section>
 
-      {/* Right Session Feed */}
+      {/* Right Capture Ledger */}
       <aside className="lg:col-span-5 paper-card overflow-hidden">
         <div className="px-4 py-3 border-b border-[var(--border-hairline)] flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-semibold">Captured Session ({captured.length})</h3>
-            <p className="text-xs text-[var(--ink-muted)] font-mono">
-              Every captured sheet joins your main batch for HITL review & grading
-            </p>
+            <h3 className="text-sm font-semibold">
+              {t.capturedSession} ({captured.length})
+            </h3>
+            <p className="text-[11px] text-[var(--ink-muted)] font-mono">{t.capturedSessionSub}</p>
           </div>
           {captured.length > 0 && (
             <button type="button" onClick={onGoToReview} className="btn-primary text-xs">
-              Review Batch <ArrowRight className="w-3.5 h-3.5" />
+              {t.reviewBatch} <ArrowRight className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
 
-        <div className="p-4 space-y-3 max-h-[68vh] overflow-y-auto">
+        <div className="p-3.5 space-y-2.5 max-h-[68vh] overflow-y-auto">
           {captured.length === 0 ? (
             <div className="py-12 text-center space-y-2 text-[var(--ink-muted)]">
-              <Sparkles className="w-7 h-7 mx-auto opacity-50" />
-              <p className="text-xs max-w-xs mx-auto">
-                Captured sheets will stream here with their live confidence score, detected template, and verification overlay.
-              </p>
+              <Crosshair className="w-6 h-6 mx-auto opacity-45" />
+              <p className="text-xs max-w-xs mx-auto">{t.capturedEmpty}</p>
             </div>
           ) : (
             captured.map(({ sheet, overlay }) => (
               <div
                 key={sheet.sheet_id}
-                className="p-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--surface-paper)] flex gap-3 items-start"
+                className="p-2.5 rounded-[5px] border border-[var(--border-hairline)] bg-[var(--surface-paper)] flex gap-3 items-start"
               >
                 {overlay && (
                   <img
                     src={overlay}
                     alt={sheet.sheet_id}
-                    className="w-20 h-28 object-cover rounded border border-[var(--border-hairline)] shrink-0 bg-white"
+                    className="w-18 h-24 object-cover rounded-[3px] border border-[var(--border-strong)] shrink-0 bg-white"
                   />
                 )}
                 <div className="flex-1 min-w-0 space-y-1 text-xs">
@@ -340,10 +358,10 @@ export function CameraScanner({
                     </span>
                   </div>
                   <div className="text-[11px] font-mono text-[var(--ink-muted)]">
-                    Template: {sheet.template_name} · Flags: {sheet.review_items.length}
+                    {sheet.template_name} · {sheet.registration_method} · flags:{sheet.review_items.length}
                   </div>
                   {Object.keys(sheet.grouped_values).length > 0 && (
-                    <div className="text-[11px] font-mono text-[var(--ink-primary)] pt-1">
+                    <div className="text-[11px] font-mono text-[var(--ink-primary)] pt-0.5">
                       {Object.entries(sheet.grouped_values)
                         .map(([k, v]) => `${k}: ${v}`)
                         .join(" | ")}

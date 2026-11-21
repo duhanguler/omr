@@ -109,6 +109,8 @@ export interface ScanResponse {
   total_elapsed_ms: number;
   sheets: SheetResult[];
   overlays: Record<string, string>;
+  review_crops?: Record<string, Record<string, string>>;
+  sheet_dimensions?: Record<string, [number, number]>;
 }
 
 export interface IdGridSpec {
