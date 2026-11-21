@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Literal
-from urllib.parse import quote, unquote
+from urllib.parse import unquote
 
 import cv2
 import numpy as np
@@ -13,6 +13,7 @@ from omrkit.vision.preprocess import ensure_grayscale
 
 QR_PREFIX = "OMRKIT:v2:"
 QR_V3_PREFIX = "OMRKIT:v3:"
+_MAX_QR_V3_BYTES = 104
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +42,30 @@ class SheetQRPayload:
         )
 
 
+def _escape_qr_value(raw: str) -> str:
+    """Escape only structural delimiters while preserving raw UTF-8 bytes for compact QR density."""
+    cleaned = raw.replace("\r", " ").replace("\n", " ").strip()
+    return cleaned.replace("%", "%25").replace("|", "%7C").replace("=", "%3D")
+
+
+def _truncate_utf8(text: str, max_bytes: int) -> str:
+    """Truncate a string cleanly on character boundaries so its UTF-8 encoding fits max_bytes."""
+    if max_bytes <= 0:
+        return ""
+    encoded = text.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return text
+    out_chars: list[str] = []
+    used = 0
+    for ch in text:
+        ch_len = len(ch.encode("utf-8"))
+        if used + ch_len > max_bytes:
+            break
+        out_chars.append(ch)
+        used += ch_len
+    return "".join(out_chars).rstrip()
+
+
 def encode_sheet_qr_payload(
     preset_id: str,
     *,
@@ -53,25 +78,54 @@ def encode_sheet_qr_payload(
     """Build a compact canonical QR payload identifying an OMRKit sheet layout.
 
     Emits backward-compatible ``OMRKIT:v2:<preset_id>`` when no student fields are provided,
-    and compact ``OMRKIT:v3:<preset_id>|sid=...|n=...|c=...|b=...|e=...`` for personalized
-    roster sheets.
+    and compact raw-UTF-8 ``OMRKIT:v3:<preset_id>|sid=...|b=...|c=...|n=...`` bounded to keep
+    200 DPI printed QR modules reliably scannable across Turkish/CJK/Cyrillic scripts.
     """
     pid = preset_id.strip()
+    has_any = any(
+        val and val.strip() for val in (student_id, student_name, classroom, booklet, email)
+    )
+    if not has_any:
+        return f"{QR_PREFIX}{pid}"
+
+    header = f"{QR_V3_PREFIX}{pid}"
+    budget = max(24, _MAX_QR_V3_BYTES - len(header.encode("utf-8")))
     parts: list[str] = []
-    if student_id and student_id.strip():
-        parts.append(f"sid={quote(student_id.strip()[:24], safe='')}")
-    if student_name and student_name.strip():
-        parts.append(f"n={quote(student_name.strip()[:42], safe='')}")
-    if classroom and classroom.strip():
-        parts.append(f"c={quote(classroom.strip()[:20], safe='')}")
-    if booklet and booklet.strip():
-        parts.append(f"b={quote(booklet.strip()[:8].upper(), safe='')}")
-    if email and email.strip():
-        parts.append(f"e={quote(email.strip()[:48], safe='@._-')}")
+
+    def _try_append(key: str, raw_val: str | None, max_field_bytes: int, allow_trunc: bool) -> None:
+        nonlocal budget
+        if not raw_val or not raw_val.strip():
+            return
+        escaped = _escape_qr_value(raw_val)
+        prefix = f"|{key}="
+        avail = min(max_field_bytes, budget - len(prefix))
+        if avail <= 0:
+            return
+        if len(escaped.encode("utf-8")) > avail:
+            if not allow_trunc:
+                return
+            escaped = _truncate_utf8(escaped, avail)
+            # Avoid clipping in the middle of a %XX escape sequence
+            if len(escaped) >= 1 and escaped[-1] == "%":
+                escaped = escaped[:-1]
+            elif len(escaped) >= 2 and escaped[-2] == "%":
+                escaped = escaped[:-2]
+        if not escaped:
+            return
+        segment = f"{prefix}{escaped}"
+        parts.append(segment)
+        budget -= len(segment.encode("utf-8"))
+
+    # Priority order: ID -> Booklet -> Classroom -> Name -> Email (only if full email fits)
+    _try_append("sid", student_id, 24, allow_trunc=True)
+    _try_append("b", booklet.upper() if booklet else None, 6, allow_trunc=True)
+    _try_append("c", classroom, 16, allow_trunc=True)
+    _try_append("n", student_name, 42, allow_trunc=True)
+    _try_append("e", email, 36, allow_trunc=False)
 
     if not parts:
         return f"{QR_PREFIX}{pid}"
-    return f"{QR_V3_PREFIX}{pid}|" + "|".join(parts)
+    return header + "".join(parts)
 
 
 def parse_sheet_qr_details(raw_text: str) -> SheetQRPayload | None:
@@ -120,11 +174,13 @@ def parse_sheet_qr_payload(raw_text: str) -> str | None:
 
 
 def render_qr_matrix(payload: str, pixel_size: int = 240) -> np.ndarray:
-    """Generate a crisp binary QR code image with a white quiet zone using OpenCV."""
+    """Generate a crisp integer-scaled binary QR code image with a 4-module white quiet zone."""
     encoder = cv2.QRCodeEncoder_create()  # type: ignore[attr-defined]
     matrix = encoder.encode(payload)
-    scaled = cv2.resize(matrix, (pixel_size, pixel_size), interpolation=cv2.INTER_NEAREST)
-    pad = max(12, pixel_size // 10)
+    mod_count = max(1, int(matrix.shape[0]))
+    mod_px = max(4, pixel_size // mod_count)
+    scaled = np.repeat(np.repeat(matrix, mod_px, axis=0), mod_px, axis=1)
+    pad = mod_px * 4
     bordered: np.ndarray = cv2.copyMakeBorder(
         scaled, pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=255
     )
@@ -165,15 +221,16 @@ def detect_sheet_qr_payload(image_bgr: np.ndarray) -> SheetQRPayload | None:
                     return parsed
 
     # Focused high-contrast upscaled pass on small crops (e.g., rectified QR badge)
-    if max(h, w) <= 700:
-        up = cv2.resize(gray, (w * 2, h * 2), interpolation=cv2.INTER_CUBIC)
-        _, otsu = cv2.threshold(up, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        for img in (up, otsu):
-            text, _, _ = detector.detectAndDecode(img)
-            if text:
-                parsed = parse_sheet_qr_details(text)
-                if parsed is not None:
-                    return parsed
+    if max(h, w) <= 800:
+        for factor in (2, 3):
+            up = cv2.resize(gray, (w * factor, h * factor), interpolation=cv2.INTER_CUBIC)
+            _, otsu = cv2.threshold(up, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            for img in (up, otsu):
+                text, _, _ = detector.detectAndDecode(img)
+                if text:
+                    parsed = parse_sheet_qr_details(text)
+                    if parsed is not None:
+                        return parsed
 
     return None
 

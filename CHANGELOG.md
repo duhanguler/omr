@@ -2,6 +2,20 @@
 
 All notable changes to **OMRKit** are documented in this file.
 
+## [2.3.1] - 2026-11-21
+
+### Security
+- **Neutralized Spreadsheet Formula Injection & Excel Control-Char Crashes (`omrkit.io.exporters`):** Added `_sanitize_spreadsheet_text()` across CSV, Moodle CSV, Canvas CSV, and Excel `.xlsx` exporters to neutralize leading formula characters (`=`, `+`, `-`, `@`, `\t`, `\r`) on string cells while preserving numeric negative scores, and strip XML-illegal control bytes that previously crashed `openpyxl` with `IllegalCharacterError` (`HTTP 500`).
+- **Bounded `roster_csv` & `roster_file` Payloads (`omrkit.api.routes`):** Enforced explicit size caps (`512 KB` on inline `roster_csv` form fields and `2 MB` on uploaded `roster_file` attachments, returning `HTTP 413`) with Windows-1254 CSV decoding fallback in `POST /api/generate/roster-packet`.
+
+### Fixed
+- **QR v3 Unicode Reliability (`omrkit.vision.qr`, `omrkit.generator.pdf_sheet`, `omrkit.core.scanner`, `omrkit.core.auto_scanner`):** Switched `OMRKIT:v3` payloads from percent-encoded ASCII to compact raw-UTF-8 byte-budgeted encoding (`<= 104` UTF-8 bytes), exact integer-pixel QR module scaling (`np.repeat`), enlarged `17.5mm` v3 badge, and wider header ROI (`[0:24%, 62%:100%]`) so long Turkish, Chinese, and Russian names decode reliably at 200 DPI under rotation, warp, and shadow.
+- **ArUco Marker Deduplication & 3-Corner Recovery Validation (`omrkit.vision.registration`):** Retains the largest-area contour per ArUco ID so small false-positive markers cannot overwrite real corner fiducials, and validates marker scale consistency + 12-point reprojection error in `aruco_3pt` before accepting a recovery homography.
+- **Auto-Deskew Background Alignment (`omrkit.vision.grid_finder`, `omrkit.api.routes`):** Added `detect_layout_from_blank_with_image()` so `POST /api/templates/auto-detect` returns the deskewed preview image matching auto-detected block coordinates pixel-for-pixel.
+- **CLI Resilience (`omrkit.cli.app`):** Hardened `omrkit watch` and QR-auto `omrkit scan` to catch `DocumentLoadError` on incomplete/corrupt scanner files without crashing, and deduplicated modified files by path in `watch`.
+- **CSV Columns, QR Warnings & Blank Key Validation (`omrkit.io.exporters`, `omrkit.core.scanner`, `omrkit.grading.key_extractor`, `omrkit.api.routes`):** Eliminated duplicate `BOOKLET` columns in CSV/Excel, cleared stale checksum warnings and avoided redundant `STUDENT_ID` on `turkish_exam_50` QR v3 scans, rejected all-blank key sheets with clear errors, warned on multi-marked `BOOKLET` key sheets, and resolved auto-detected templates in `/api/answer-key/from-sheet`.
+- **Web Studio UX & State Fixes (`studio/`):** Guarded `Enter` keyboard triage against confirming invalid multi-marked combos (`"AB"`), auto-focused the first flagged sheet on **Sample Cohort** / camera batches, displayed QR v3 student names in the Scan batch list, eliminated duplicate block/label names & hover canvas flicker in `TemplateDesigner`, cleared stale grades when replacing the answer key in `AnalyticsView`, parsed JSON error `detail` cleanly in `exportReportFile`, and added Windows-1254/Windows-1252 CSV decoding fallback in `SheetGenerator`.
+
 ## [2.3.0] - 2026-11-21
 
 ### Added — Classroom & Teacher Workflows

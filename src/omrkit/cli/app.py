@@ -34,7 +34,12 @@ from omrkit.io.exporters import (
     export_moodle_csv,
     export_pdf_scorecard,
 )
-from omrkit.io.loader import discover_documents, load_document, strip_exif_and_save
+from omrkit.io.loader import (
+    DocumentLoadError,
+    discover_documents,
+    load_document,
+    strip_exif_and_save,
+)
 from omrkit.models.grading import AnswerKey, GradingPolicy
 from omrkit.models.scan import BatchResult, SheetResult
 from omrkit.models.template import Template
@@ -139,7 +144,20 @@ def scan(
         t0 = perf_counter()
         all_sheets: list[SheetResult] = []
         for f in files:
-            all_sheets.extend(scan_file_auto(f, dpi=dpi, save_overlay_dir=overlay_dir))
+            try:
+                all_sheets.extend(scan_file_auto(f, dpi=dpi, save_overlay_dir=overlay_dir))
+            except DocumentLoadError as exc:
+                all_sheets.append(
+                    SheetResult(
+                        sheet_id=f.stem,
+                        source_file=f.name,
+                        template_name="auto",
+                        overall_confidence=0.0,
+                        registration_method="qr_auto",
+                        registration_score=0.0,
+                        error=str(exc),
+                    )
+                )
         ensure_unique_sheet_ids(all_sheets)
         elapsed = (perf_counter() - t0) * 1000.0
         succeeded = sum(1 for r in all_sheets if r.error is None)
@@ -387,7 +405,8 @@ def watch(
     )
 
     seen_files: dict[Path, tuple[int, int]] = {}
-    all_sheets: list[SheetResult] = []
+    failed_sigs: dict[Path, tuple[int, int]] = {}
+    results_by_file: dict[Path, list[SheetResult]] = {}
     console.print(
         f"[bold cyan]Watching[/bold cyan] '{watch_dir}' -> '{output}' "
         f"(template={'auto QR' if tmpl is None else tmpl.name}, Ctrl+C to stop)..."
@@ -405,17 +424,30 @@ def watch(
                 except OSError:
                     continue
                 sig = (st.st_size, st.st_mtime_ns)
-                if st.st_size == 0 or seen_files.get(fpath) == sig:
+                if st.st_size == 0 or seen_files.get(fpath) == sig or failed_sigs.get(fpath) == sig:
+                    continue
+                try:
+                    if scanner is not None:
+                        res_list = scanner.scan_file(fpath, save_overlay_dir=overlay_dir)
+                    else:
+                        res_list = scan_file_auto(fpath, dpi=dpi, save_overlay_dir=overlay_dir)
+                except DocumentLoadError as exc:
+                    failed_sigs[fpath] = sig
+                    console.print(
+                        f"  [yellow]Skipped incomplete/corrupt file[/yellow] '{fpath.name}': {exc}"
+                    )
                     continue
                 seen_files[fpath] = sig
-                if scanner is not None:
-                    res_list = scanner.scan_file(fpath, save_overlay_dir=overlay_dir)
-                else:
-                    res_list = scan_file_auto(fpath, dpi=dpi, save_overlay_dir=overlay_dir)
+                failed_sigs.pop(fpath, None)
+                results_by_file[fpath] = res_list
                 new_results.extend(res_list)
 
             if new_results:
-                all_sheets.extend(new_results)
+                all_sheets = [
+                    sheet.model_copy(deep=True)
+                    for path_key in sorted(results_by_file)
+                    for sheet in results_by_file[path_key]
+                ]
                 ensure_unique_sheet_ids(all_sheets)
                 report = grader.grade_batch(all_sheets) if grader is not None else None
                 export_csv(all_sheets, output / "results.csv", report=report)
@@ -438,7 +470,8 @@ def watch(
                 break
             sleep(max(0.1, interval))
     except KeyboardInterrupt:
-        console.print(f"\n[cyan]Stopped watcher after scanning {len(all_sheets)} sheet(s).[/cyan]")
+        total_scanned = sum(len(v) for v in results_by_file.values())
+        console.print(f"\n[cyan]Stopped watcher after scanning {total_scanned} sheet(s).[/cyan]")
 
 
 @app.command("detect-layout")

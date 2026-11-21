@@ -152,14 +152,14 @@ def _estimate_skew_angle(circles: list[DetectedCircle], median_r: float) -> floa
     return float(np.median(angles))
 
 
-def detect_layout_from_blank(
+def detect_layout_from_blank_with_image(
     image_bgr: np.ndarray,
     template_name: str = "auto_detected_template",
-) -> tuple[Template, int]:
-    """Automatically infer OMRKit FieldBlocks from a blank optical form image.
+) -> tuple[Template, int, np.ndarray]:
+    """Infer OMRKit FieldBlocks from a blank form and return (Template, bubble_count, aligned_bgr).
 
-    Automatically detects and corrects minor page tilt (up to +/-12 degrees) before
-    clustering rows and columns into FieldBlocks. Returns (Template, total_bubbles_detected).
+    Automatically detects and corrects minor page tilt (up to +/-12 degrees) before clustering,
+    returning the aligned image that matches the emitted template coordinates pixel-for-pixel.
     """
     h, w = image_bgr.shape[:2]
     circles = _find_candidate_bubbles(image_bgr)
@@ -169,6 +169,8 @@ def detect_layout_from_blank(
             "Upload a clean blank sheet image or draw blocks manually."
         )
 
+    aligned_bgr = image_bgr
+    applied_skew_deg = 0.0
     median_r = float(np.median([c.radius for c in circles]))
     skew_deg = _estimate_skew_angle(circles, median_r)
     if abs(skew_deg) >= 0.4:
@@ -185,6 +187,8 @@ def detect_layout_from_blank(
         if len(deskewed_circles) >= max(4, int(len(circles) * 0.75)):
             circles = deskewed_circles
             median_r = float(np.median([c.radius for c in circles]))
+            aligned_bgr = deskewed
+            applied_skew_deg = round(skew_deg, 2)
 
     rows = _cluster_rows(circles, y_tol=median_r * 0.9)
 
@@ -334,6 +338,18 @@ def detect_layout_from_blank(
         registration=RegistrationConfig(mode="none"),
         detection=DetectionConfig(),
         blocks=blocks,
-        metadata={"auto_detected_bubbles": len(circles)},
+        metadata={
+            "auto_detected_bubbles": len(circles),
+            "deskew_deg": applied_skew_deg,
+        },
     )
-    return template, len(circles)
+    return template, len(circles), aligned_bgr
+
+
+def detect_layout_from_blank(
+    image_bgr: np.ndarray,
+    template_name: str = "auto_detected_template",
+) -> tuple[Template, int]:
+    """Automatically infer OMRKit FieldBlocks from a blank optical form image."""
+    template, count, _ = detect_layout_from_blank_with_image(image_bgr, template_name=template_name)
+    return template, count

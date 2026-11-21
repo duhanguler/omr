@@ -18,9 +18,29 @@ from omrkit.io.pdf_fonts import PdfFontPair, get_pdf_fonts
 from omrkit.models.grading import GradingReport, StudentGrade
 from omrkit.models.scan import SheetResult
 
+_ILLEGAL_XML_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _sanitize_spreadsheet_text(value: str, *, allow_numeric_sign: bool = False) -> str:
+    """Strip Excel/XML-illegal control characters and neutralize spreadsheet formula injection."""
+    cleaned = _ILLEGAL_XML_CHARS_RE.sub("", value)
+    if not cleaned:
+        return ""
+    if cleaned[0] in _FORMULA_PREFIXES:
+        if allow_numeric_sign and cleaned[0] in {"+", "-"}:
+            try:
+                float(cleaned)
+                return cleaned
+            except ValueError:
+                pass
+        return f"'{cleaned}"
+    return cleaned
+
 
 def _collect_columns(sheets: list[SheetResult]) -> tuple[list[str], list[str]]:
     grouped_cols: list[str] = []
+    grouped_lower: set[str] = set()
     field_cols: list[str] = []
     grouped_field_prefixes: set[str] = set()
 
@@ -28,16 +48,18 @@ def _collect_columns(sheets: list[SheetResult]) -> tuple[list[str], list[str]]:
         for gk in s.grouped_values:
             if gk not in grouped_cols:
                 grouped_cols.append(gk)
+                grouped_lower.add(gk.lower())
                 grouped_field_prefixes.add(gk.lower() + "_")
         for fk in s.fields:
             if fk not in field_cols:
                 field_cols.append(fk)
 
-    # Keep ungrouped fields cleanly in output
+    # Keep ungrouped fields cleanly in output without duplicating grouped/exact columns
     filtered_fields = [
         fk
         for fk in field_cols
-        if not any(fk.lower().startswith(pref) for pref in grouped_field_prefixes)
+        if fk.lower() not in grouped_lower
+        and not any(fk.lower().startswith(pref) for pref in grouped_field_prefixes)
     ]
     return grouped_cols, filtered_fields
 
@@ -57,23 +79,23 @@ def export_csv_string(
         "page_index",
         "overall_confidence",
         "review_flags",
-        *grouped_cols,
+        *[_sanitize_spreadsheet_text(gk) for gk in grouped_cols],
     ]
     if report:
         headers.extend(["score", "max_score", "percentage", "correct", "incorrect", "blank"])
-    headers.extend(field_cols)
+    headers.extend(_sanitize_spreadsheet_text(fk) for fk in field_cols)
 
     writer = csv.writer(buf)
     writer.writerow(headers)
 
     for s in sheets:
         row: list[object] = [
-            s.sheet_id,
-            s.source_file,
+            _sanitize_spreadsheet_text(s.sheet_id),
+            _sanitize_spreadsheet_text(s.source_file),
             s.page_index,
             f"{s.overall_confidence:.4f}",
             len(s.review_items),
-            *[s.grouped_values.get(gk, "") for gk in grouped_cols],
+            *[_sanitize_spreadsheet_text(s.grouped_values.get(gk, "")) for gk in grouped_cols],
         ]
         if report:
             g = grade_by_id.get(s.sheet_id)
@@ -83,7 +105,10 @@ def export_csv_string(
                 )
             else:
                 row.extend(["", "", "", "", "", ""])
-        row.extend(s.fields[fk].value if fk in s.fields else "" for fk in field_cols)
+        row.extend(
+            _sanitize_spreadsheet_text(s.fields[fk].value) if fk in s.fields else ""
+            for fk in field_cols
+        )
         writer.writerow(row)
 
     return buf.getvalue()
@@ -144,10 +169,16 @@ def export_excel_bytes(
     grouped_cols, field_cols = _collect_columns(sheets)
     grade_by_id = {g.sheet_id: g for g in report.grades} if report else {}
 
-    headers = ["Sheet ID", "Source File", "Confidence", "Review Flags", *grouped_cols]
+    headers = [
+        "Sheet ID",
+        "Source File",
+        "Confidence",
+        "Review Flags",
+        *[_sanitize_spreadsheet_text(gk) for gk in grouped_cols],
+    ]
     if report:
         headers.extend(["Score", "Max Score", "Percent (%)", "Correct", "Incorrect", "Blank"])
-    headers.extend(field_cols)
+    headers.extend(_sanitize_spreadsheet_text(fk) for fk in field_cols)
     ws_resp.append(headers)
 
     for cell in ws_resp[1]:
@@ -157,11 +188,11 @@ def export_excel_bytes(
 
     for row_idx, s in enumerate(sheets, start=2):
         row: list[object] = [
-            s.sheet_id,
-            s.source_file,
+            _sanitize_spreadsheet_text(s.sheet_id),
+            _sanitize_spreadsheet_text(s.source_file),
             round(s.overall_confidence, 4),
             len(s.review_items),
-            *[s.grouped_values.get(gk, "") for gk in grouped_cols],
+            *[_sanitize_spreadsheet_text(s.grouped_values.get(gk, "")) for gk in grouped_cols],
         ]
         if report:
             g = grade_by_id.get(s.sheet_id)
@@ -171,7 +202,10 @@ def export_excel_bytes(
                 )
             else:
                 row.extend(["", "", "", "", "", ""])
-        row.extend(s.fields[fk].value if fk in s.fields else "" for fk in field_cols)
+        row.extend(
+            _sanitize_spreadsheet_text(s.fields[fk].value) if fk in s.fields else ""
+            for fk in field_cols
+        )
         ws_resp.append(row)
         if s.review_items:
             ws_resp.cell(row=row_idx, column=4).fill = warn_fill
@@ -183,8 +217,8 @@ def export_excel_bytes(
         ws_sum = wb.create_sheet("Exam Summary")
         a = report.analytics
         summary_rows = [
-            ("Exam Name", report.exam_name),
-            ("Grading Policy", report.policy_name),
+            ("Exam Name", _sanitize_spreadsheet_text(report.exam_name)),
+            ("Grading Policy", _sanitize_spreadsheet_text(report.policy_name)),
             ("Students Graded", a.student_count),
             ("Questions", a.question_count),
             ("Mean Score", a.mean_score),
@@ -221,15 +255,15 @@ def export_excel_bytes(
         for item in a.items:
             ws_items.append(
                 [
-                    item.question_id,
-                    item.expected,
+                    _sanitize_spreadsheet_text(item.question_id),
+                    _sanitize_spreadsheet_text(item.expected),
                     item.correct_count,
                     item.incorrect_count,
                     item.blank_count,
                     item.difficulty_p,
                     item.discrimination_d,
                     item.omit_rate,
-                    item.quality_flag,
+                    _sanitize_spreadsheet_text(item.quality_flag),
                 ]
             )
         ws_items.freeze_panes = "A2"
@@ -479,13 +513,13 @@ def export_moodle_csv_string(report: GradingReport) -> str:
         )
         writer.writerow(
             [
-                f"Participant {sid}",
-                name,
-                sid,
-                email,
+                _sanitize_spreadsheet_text(f"Participant {sid}"),
+                _sanitize_spreadsheet_text(name),
+                _sanitize_spreadsheet_text(sid),
+                _sanitize_spreadsheet_text(email),
                 f"{grade.raw_score:.2f}",
                 f"{grade.max_score:.2f}",
-                feedback,
+                _sanitize_spreadsheet_text(feedback),
             ]
         )
     return buf.getvalue()
@@ -501,7 +535,9 @@ def export_moodle_csv(report: GradingReport, path: str | Path) -> Path:
 
 def export_canvas_csv_string(report: GradingReport, assignment_name: str | None = None) -> str:
     """Export grades in Canvas LMS Gradebook import CSV format (including Points Possible row)."""
-    col_name = (assignment_name or report.exam_name or "OMRKit Exam").strip()
+    col_name = _sanitize_spreadsheet_text(
+        (assignment_name or report.exam_name or "OMRKit Exam").strip()
+    )
     max_possible = report.grades[0].max_score if report.grades else 100.0
 
     buf = io.StringIO()
@@ -512,11 +548,11 @@ def export_canvas_csv_string(report: GradingReport, assignment_name: str | None 
         sid, name, classroom, email = _resolve_lms_identity(grade)
         writer.writerow(
             [
-                name,
-                sid,
-                sid,
-                email or sid,
-                classroom,
+                _sanitize_spreadsheet_text(name),
+                _sanitize_spreadsheet_text(sid),
+                _sanitize_spreadsheet_text(sid),
+                _sanitize_spreadsheet_text(email or sid),
+                _sanitize_spreadsheet_text(classroom),
                 f"{grade.raw_score:.2f}",
             ]
         )

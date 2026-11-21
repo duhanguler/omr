@@ -257,9 +257,9 @@ class SheetGenerator:
                 booklet=student.booklet,
                 email=student.email,
             )
-            qr_size_mm = 16.2
-            qr_left_mm = page_w_mm - 41.5
-            qr_top_mm = 19.6
+            qr_size_mm = 17.5
+            qr_left_mm = page_w_mm - 42.5
+            qr_top_mm = 19.0
         else:
             qr_payload = encode_sheet_qr_payload(spec.preset_id)
             qr_size_mm = 15.0

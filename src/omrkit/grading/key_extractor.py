@@ -79,6 +79,12 @@ def extract_answer_key_from_sheets(
         if booklet_field and booklet_field in flat:
             has_booklet_field = True
             detected_booklet = flat[booklet_field].strip().upper()
+            if len(detected_booklet) > 1:
+                warnings.append(
+                    f"Booklet field on key sheet '{sheet.sheet_id}' had multiple marks ('{detected_booklet}'); "
+                    f"using '{detected_booklet[0]}'."
+                )
+                detected_booklet = detected_booklet[0]
         if not detected_booklet:
             detected_booklet = chr(ord("A") + idx) if len(valid_sheets) > 1 else "A"
 
@@ -87,6 +93,7 @@ def extract_answer_key_from_sheets(
             raise ValueError(f"Sheet '{sheet.sheet_id}' contains no recognizable question fields.")
 
         answers_map: dict[str, str | list[str]] = {}
+        marked_on_sheet = 0
         for qid in qids:
             reading = sheet.fields[qid]
             selected = [opt.strip() for opt in reading.selected_options if opt.strip()]
@@ -101,12 +108,20 @@ def extract_answer_key_from_sheets(
                 )
                 answers_map[qid] = ""
             elif len(selected) == 1:
+                marked_on_sheet += 1
                 answers_map[qid] = selected[0]
             else:
+                marked_on_sheet += 1
                 multi_answer_questions.append(
                     f"{detected_booklet}:{qid}" if len(valid_sheets) > 1 else qid
                 )
                 answers_map[qid] = selected
+
+        if marked_on_sheet == 0:
+            raise ValueError(
+                f"No marked answers were detected on key sheet '{sheet.sheet_id}'. "
+                "Fill in the correct bubbles before scanning as an answer key."
+            )
 
         per_sheet_maps.append((detected_booklet, answers_map))
 

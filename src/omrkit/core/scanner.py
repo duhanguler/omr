@@ -45,15 +45,19 @@ def inject_qr_student_metadata(result: SheetResult, payload: SheetQRPayload) -> 
         if matched_key is not None:
             if not result.grouped_values[matched_key].strip():
                 result.grouped_values[matched_key] = payload.student_id
+                cleared_msgs = {
+                    r.message
+                    for r in result.review_items
+                    if r.field_id == matched_key and r.reason == "invalid_checksum"
+                }
                 result.review_items = [
                     r
                     for r in result.review_items
                     if not (r.field_id == matched_key and r.reason == "invalid_checksum")
                 ]
+                if cleared_msgs:
+                    result.warnings = [w for w in result.warnings if w not in cleared_msgs]
         else:
-            result.grouped_values["STUDENT_ID"] = payload.student_id
-        # Always expose canonical STUDENT_ID if primary group used another name and wasn't set
-        if not result.grouped_values.get("STUDENT_ID", "").strip():
             result.grouped_values["STUDENT_ID"] = payload.student_id
 
     if payload.booklet:
@@ -213,7 +217,7 @@ class OMRScanner:
         # Inspect compact upper-right QR badge on ArUco-generated sheets for OMRKIT:v3 student info
         if reg.method.startswith("aruco"):
             wh, ww = reg.warped_bgr.shape[:2]
-            qr_roi = reg.warped_bgr[0 : round(wh * 0.22), round(ww * 0.65) : ww]
+            qr_roi = reg.warped_bgr[0 : round(wh * 0.24), round(ww * 0.62) : ww]
             qr_payload = detect_sheet_qr_payload(qr_roi)
             if qr_payload is not None and qr_payload.has_student_metadata:
                 inject_qr_student_metadata(result, qr_payload)

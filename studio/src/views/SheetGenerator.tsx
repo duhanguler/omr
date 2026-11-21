@@ -373,7 +373,18 @@ export function SheetGenerator({ t, presets, onActivateGenerated }: SheetGenerat
                 onChange={async (e) => {
                   const f = e.target.files?.[0];
                   if (f) {
-                    setRosterCsv(await f.text());
+                    const buf = await f.arrayBuffer();
+                    let decoded: string;
+                    try {
+                      decoded = new TextDecoder("utf-8", { fatal: true }).decode(buf);
+                    } catch {
+                      try {
+                        decoded = new TextDecoder("windows-1254").decode(buf);
+                      } catch {
+                        decoded = new TextDecoder("windows-1252").decode(buf);
+                      }
+                    }
+                    setRosterCsv(decoded);
                     setRosterStatus(null);
                   }
                   e.target.value = "";
