@@ -291,6 +291,20 @@ export function TemplateDesigner({ t, activeTemplate, onUseTemplate }: TemplateD
     return Math.min(1, maxDisplayW / Math.max(100, template.page_width));
   }
 
+  function nextUniqueBlockNumber(blocks: FieldBlock[]): number {
+    const existingNames = new Set(blocks.map((b) => b.name));
+    const existingLabels = new Set(blocks.flatMap((b) => expandLabelsPreview(b.labels)));
+    let n = blocks.length + 1;
+    while (
+      existingNames.has(`BLOCK_${n}`) ||
+      existingLabels.has(`b${n}_1`) ||
+      existingLabels.has(`f${n * 100 + 1}`)
+    ) {
+      n += 1;
+    }
+    return n;
+  }
+
   function drawCanvas() {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -298,8 +312,10 @@ export function TemplateDesigner({ t, activeTemplate, onUseTemplate }: TemplateD
     if (!ctx) return;
 
     const scale = getCanvasScale();
-    canvas.width = Math.round(template.page_width * scale);
-    canvas.height = Math.round(template.page_height * scale);
+    const targetW = Math.round(template.page_width * scale);
+    const targetH = Math.round(template.page_height * scale);
+    if (canvas.width !== targetW) canvas.width = targetW;
+    if (canvas.height !== targetH) canvas.height = targetH;
 
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -539,7 +555,7 @@ export function TemplateDesigner({ t, activeTemplate, onUseTemplate }: TemplateD
 
     const rows = 5;
     const options = ["A", "B", "C", "D", "E"];
-    const nextNum = template.blocks.length + 1;
+    const nextNum = nextUniqueBlockNumber(template.blocks);
     const startQ = nextNum * 100 + 1;
     const bubblesGap = Math.max(16, Math.round(bw / Math.max(1, options.length - 1)));
     const labelsGap = Math.max(16, Math.round(bh / Math.max(1, rows - 1)));
@@ -864,7 +880,7 @@ export function TemplateDesigner({ t, activeTemplate, onUseTemplate }: TemplateD
             <button
               type="button"
               onClick={() => {
-                const idx = template.blocks.length + 1;
+                const idx = nextUniqueBlockNumber(template.blocks);
                 const b: FieldBlock = {
                   name: `BLOCK_${idx}`,
                   field_type: "mcq",

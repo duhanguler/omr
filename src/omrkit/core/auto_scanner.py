@@ -43,7 +43,7 @@ def resolve_template_payload_for_image(
             reg = register_sheet(image_bgr, fallback_template)
             wh, ww = reg.warped_bgr.shape[:2]
             # Try upper-right header ROI first (fast & zoomed) then full rectified image
-            qr_roi = reg.warped_bgr[0 : round(wh * 0.22), round(ww * 0.65) : ww]
+            qr_roi = reg.warped_bgr[0 : round(wh * 0.24), round(ww * 0.62) : ww]
             for view in (qr_roi, reg.warped_bgr):
                 payload = detect_sheet_qr_payload(view)
                 if payload is not None and payload.preset_id in registry:

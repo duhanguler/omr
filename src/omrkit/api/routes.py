@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 
 from omrkit._version import __version__
 from omrkit.api.settings import APISettings, get_api_settings
-from omrkit.core.auto_scanner import scan_bytes_auto
+from omrkit.core.auto_scanner import resolve_template_payload_for_image, scan_bytes_auto
 from omrkit.core.benchmark import apply_camera_distortion, render_synthetic_filled_sheet
 from omrkit.core.migrator import migrate_legacy_template_dict
 from omrkit.core.scanner import OMRScanner
@@ -40,7 +40,7 @@ from omrkit.io.loader import DocumentLoadError, load_bytes
 from omrkit.models.grading import AnswerKey, GradingPolicy, GradingReport, StudentGrade
 from omrkit.models.scan import SheetResult
 from omrkit.models.template import Template
-from omrkit.vision.grid_finder import detect_layout_from_blank
+from omrkit.vision.grid_finder import detect_layout_from_blank_with_image
 from omrkit.vision.visualizer import render_annotated_sheet
 
 router = APIRouter(prefix="/api", tags=["omrkit"])
@@ -292,7 +292,7 @@ async def auto_detect_template_layout(
         if not pages:
             raise DocumentLoadError(f"Document '{fname}' contains 0 pages.")
         page = pages[0]
-        template, bubbles_count = detect_layout_from_blank(
+        template, bubbles_count, aligned_bgr = detect_layout_from_blank_with_image(
             page.image_bgr, template_name=fname.rsplit(".", 1)[0]
         )
     except (DocumentLoadError, ValueError) as exc:
@@ -303,7 +303,7 @@ async def auto_detect_template_layout(
         "detected_bubbles": bubbles_count,
         "blocks_count": len(template.blocks),
         "fields_count": len(template.all_field_ids()),
-        "image_data_url": _encode_image_data_url(page.image_bgr, fmt=".jpg", quality=88),
+        "image_data_url": _encode_image_data_url(aligned_bgr, fmt=".jpg", quality=88),
     }
 
 
@@ -681,10 +681,23 @@ async def generate_roster_packet_endpoint(
     csv_text = roster_csv
     if roster_file is not None:
         raw_bytes = await _read_bounded_upload(roster_file, settings)
+        if len(raw_bytes) > 2 * 1024 * 1024:
+            raise HTTPException(
+                status_code=413,
+                detail="Roster CSV file exceeds maximum allowed size of 2 MB.",
+            )
         try:
             csv_text = raw_bytes.decode("utf-8-sig")
         except UnicodeDecodeError:
-            csv_text = raw_bytes.decode("latin-1", errors="replace")
+            try:
+                csv_text = raw_bytes.decode("windows-1254")
+            except UnicodeDecodeError:
+                csv_text = raw_bytes.decode("latin-1", errors="replace")
+    elif len(csv_text.encode("utf-8")) > 512 * 1024:
+        raise HTTPException(
+            status_code=413,
+            detail="Roster CSV payload exceeds maximum allowed size of 512 KB.",
+        )
 
     max_students = 150 if settings.demo_mode else 500
     try:
@@ -736,15 +749,21 @@ async def extract_answer_key_endpoint(
         scanner = OMRScanner(template=tmpl, dpi=dpi)
 
     scanned_sheets: list[SheetResult] = []
+    resolved_tmpl: Template | None = tmpl
     for upload in files:
         raw_bytes = await _read_bounded_upload(upload, settings)
         fname = upload.filename or "key_sheet.png"
         try:
-            page_results = (
-                scan_bytes_auto(raw_bytes, filename=fname, dpi=dpi, max_pages=8)
-                if scanner is None
-                else scanner.scan_bytes(raw_bytes, filename=fname, max_pages=8)
-            )
+            if scanner is None:
+                if resolved_tmpl is None:
+                    first_pages = load_bytes(raw_bytes, filename=fname, dpi=dpi, max_pages=1)
+                    if first_pages:
+                        maybe = resolve_template_payload_for_image(first_pages[0].image_bgr)
+                        if maybe is not None:
+                            resolved_tmpl = maybe[0]
+                page_results = scan_bytes_auto(raw_bytes, filename=fname, dpi=dpi, max_pages=8)
+            else:
+                page_results = scanner.scan_bytes(raw_bytes, filename=fname, max_pages=8)
         except DocumentLoadError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         scanned_sheets.extend(res for res, _ in page_results)
@@ -752,7 +771,7 @@ async def extract_answer_key_endpoint(
     try:
         extracted = extract_answer_key_from_sheets(
             scanned_sheets,
-            template=tmpl,
+            template=resolved_tmpl,
             exam_name=exam_name.strip() or "Scanned Answer Key",
         )
     except ValueError as exc:

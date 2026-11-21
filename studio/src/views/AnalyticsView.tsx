@@ -36,7 +36,7 @@ interface AnalyticsViewProps {
   answerKey: AnswerKey | null;
   onUpdateAnswerKey: (key: AnswerKey) => void;
   report: GradingReport | null;
-  onReportReady: (report: GradingReport) => void;
+  onReportReady: (report: GradingReport | null) => void;
 }
 
 type SortKey = "sheet_id" | "raw_score" | "percentage";
@@ -185,6 +185,7 @@ export function AnalyticsView({
         activeTemplate?.description || "Scanned Answer Key"
       );
       onUpdateAnswerKey(res.answer_key);
+      onReportReady(null);
       if (res.booklets_detected.length > 0) {
         setSelectedBooklet(res.booklets_detected[0]);
       }
@@ -268,6 +269,7 @@ export function AnalyticsView({
                   try {
                     const parsed = JSON.parse(await file.text()) as AnswerKey;
                     onUpdateAnswerKey(parsed);
+                    onReportReady(null);
                     const bks = Object.keys(parsed.booklets ?? {});
                     if (bks.length > 0) {
                       setSelectedBooklet(

@@ -70,6 +70,23 @@ export function ScanWorkspace({
         null
       : null;
 
+  // Auto-focus the first flagged sheet whenever a new batch arrives (e.g. Sample Cohort or Camera)
+  useEffect(() => {
+    if (sheets.length === 0) {
+      setActiveSheetId(null);
+      setHoveredReviewField(null);
+      return;
+    }
+    if (!activeSheetId || !sheets.some((s) => s.sheet_id === activeSheetId)) {
+      const firstFlagged = sheets.find((s) => s.review_items.length > 0);
+      const target = firstFlagged ?? sheets[0];
+      setActiveSheetId(target.sheet_id);
+      setActiveReviewIdx(0);
+      setHoveredReviewField(null);
+      setInspectorTab(target.review_items.length > 0 ? "review" : "all");
+    }
+  }, [activeSheetId, sheets]);
+
   // Keyboard speed-triage when reviewing flagged HITL items
   useEffect(() => {
     if (!currentSheet || inspectorTab !== "review" || reviewItems.length === 0) return;
@@ -102,7 +119,12 @@ export function ScanWorkspace({
         onApplyOverride(currentSheet.sheet_id, item.field_id, "");
         return;
       }
-      if (e.key === "Enter" && item.suggested_value) {
+      // Only confirm on Enter when suggested_value is a single valid option (never a multi-mark combo)
+      if (
+        e.key === "Enter" &&
+        item.suggested_value &&
+        item.candidate_options.includes(item.suggested_value)
+      ) {
         e.preventDefault();
         onApplyOverride(currentSheet.sheet_id, item.field_id, item.suggested_value);
         return;
@@ -335,7 +357,9 @@ export function ScanWorkspace({
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono font-medium truncate">{s.sheet_id}</span>
+                      <span className="font-mono font-medium truncate">
+                        {s.grouped_values.STUDENT_NAME || s.sheet_id}
+                      </span>
                       {s.error ? (
                         <XCircle className="w-3.5 h-3.5 text-[var(--signal-err)] shrink-0" />
                       ) : s.review_items.length > 0 ? (
@@ -346,10 +370,12 @@ export function ScanWorkspace({
                         <CheckCircle2 className="w-3.5 h-3.5 text-[var(--signal-ok)] shrink-0" />
                       )}
                     </div>
-                    <div className="text-[10px] text-[var(--ink-muted)] mt-0.5 font-mono">
+                    <div className="text-[10px] text-[var(--ink-muted)] mt-0.5 font-mono truncate">
                       {s.error
                         ? t.alignmentFailed
-                        : `${(s.overall_confidence * 100).toFixed(1)}% · ${s.registration_method} · ${s.elapsed_ms.toFixed(0)}ms`}
+                        : `${s.grouped_values.STUDENT_NAME ? `${s.sheet_id} · ` : ""}${
+                            s.grouped_values.CLASSROOM ? `${s.grouped_values.CLASSROOM} · ` : ""
+                          }${(s.overall_confidence * 100).toFixed(1)}% · ${s.registration_method}`}
                     </div>
                   </button>
                 );

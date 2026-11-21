@@ -103,13 +103,19 @@ def _register_aruco(image_bgr: np.ndarray, template: Template) -> RegistrationRe
     def _detect_markers(img: np.ndarray, inv_scale: float = 1.0) -> dict[int, np.ndarray]:
         corners, ids, _ = detector.detectMarkers(img)
         found: dict[int, np.ndarray] = {}
+        best_area: dict[int, float] = {}
         if ids is None:
             return found
         for marker_corners, marker_id_val in zip(corners, np.asarray(ids).ravel(), strict=False):
             mid = int(marker_id_val)
             if mid in required_ids:
                 pts4 = np.asarray(marker_corners, dtype=np.float32).reshape(4, 2) * inv_scale
-                found[mid] = pts4
+                area = abs(float(cv2.contourArea(pts4)))
+                if area < 100.0:
+                    continue
+                if mid not in found or area > best_area[mid]:
+                    found[mid] = pts4
+                    best_area[mid] = area
         return found
 
     # Attempt 1: Native resolution grayscale
@@ -154,6 +160,25 @@ def _register_aruco(image_bgr: np.ndarray, template: Template) -> RegistrationRe
     # to recover the full 2D projective homography even when a thumb/staple covers 1 corner.
     if len(found) == 3:
         present_indices = [idx for idx, mid in enumerate(required_ids) if mid in found]
+        src_sides = [
+            float(
+                np.mean(
+                    [
+                        np.linalg.norm(
+                            found[required_ids[idx]][(k + 1) % 4] - found[required_ids[idx]][k]
+                        )
+                        for k in range(4)
+                    ]
+                )
+            )
+            for idx in present_indices
+        ]
+        if max(src_sides) <= 0.0 or (min(src_sides) / max(src_sides)) < 0.45:
+            missing = [mid for mid in required_ids if mid not in found]
+            raise RegistrationError(
+                f"ArUco 3-corner recovery rejected: inconsistent marker scales (missing IDs: {missing})."
+            )
+
         src_centers_3 = np.asarray(
             [found[required_ids[idx]].mean(axis=0) for idx in present_indices], dtype=np.float32
         )
@@ -175,7 +200,12 @@ def _register_aruco(image_bgr: np.ndarray, template: Template) -> RegistrationRe
                 * 0.25
             )
             half_extents.extend([dx_span, dy_span])
-        half_side = float(np.median(half_extents)) if half_extents else 24.0
+        half_side = float(np.median(half_extents)) if half_extents else 0.0
+        if half_side < 4.0 or (min(half_extents) / max(half_extents)) < 0.40:
+            missing = [mid for mid in required_ids if mid not in found]
+            raise RegistrationError(
+                f"ArUco 3-corner recovery rejected: degenerate marker geometry (missing IDs: {missing})."
+            )
 
         src_12_list: list[np.ndarray] = []
         dst_12_list: list[np.ndarray] = []
@@ -197,25 +227,37 @@ def _register_aruco(image_bgr: np.ndarray, template: Template) -> RegistrationRe
         dst_12 = np.vstack(dst_12_list)
 
         homography, _ = cv2.findHomography(src_12, dst_12, 0)
-        if homography is not None:
-            warped = cv2.warpPerspective(
-                image_bgr,
-                homography,
-                (template.page_width, template.page_height),
-                flags=cv2.INTER_LINEAR,
-                borderMode=cv2.BORDER_CONSTANT,
-                borderValue=(255, 255, 255),
+        if homography is not None and np.isfinite(homography).all():
+            det = float(np.linalg.det(homography))
+            projected = cv2.perspectiveTransform(src_12.reshape(-1, 1, 2), homography).reshape(
+                -1, 2
             )
-            # Infer top-edge direction from first visible marker's own TL->TR edge
-            m0 = found[required_ids[present_indices[0]]]
-            rotation = _infer_rotation_from_top_edge(m0[0], m0[1])
-            return RegistrationResult(
-                warped_bgr=warped,
-                method="aruco_3pt",
-                score=0.92,
-                rotation_deg=rotation,
-                source_corners=[(float(p[0]), float(p[1])) for p in src_centers_3],
-            )
+            errs = np.linalg.norm(projected - dst_12, axis=1)
+            med_err = float(np.median(errs))
+            max_err = float(np.max(errs))
+            if (
+                abs(det) > 1e-12
+                and med_err <= max(10.0, half_side * 0.35)
+                and max_err <= max(24.0, half_side * 0.85)
+            ):
+                warped = cv2.warpPerspective(
+                    image_bgr,
+                    homography,
+                    (template.page_width, template.page_height),
+                    flags=cv2.INTER_LINEAR,
+                    borderMode=cv2.BORDER_CONSTANT,
+                    borderValue=(255, 255, 255),
+                )
+                # Infer top-edge direction from first visible marker's own TL->TR edge
+                m0 = found[required_ids[present_indices[0]]]
+                rotation = _infer_rotation_from_top_edge(m0[0], m0[1])
+                return RegistrationResult(
+                    warped_bgr=warped,
+                    method="aruco_3pt",
+                    score=0.92,
+                    rotation_deg=rotation,
+                    source_corners=[(float(p[0]), float(p[1])) for p in src_centers_3],
+                )
 
     missing = [mid for mid in required_ids if mid not in found]
     raise RegistrationError(

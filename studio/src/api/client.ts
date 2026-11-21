@@ -176,7 +176,14 @@ export async function exportReportFile(
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || `Export failed (${res.status})`);
+    let msg = text;
+    try {
+      const parsed = JSON.parse(text) as { detail?: string };
+      if (parsed.detail) msg = parsed.detail;
+    } catch {
+      // keep raw text
+    }
+    throw new Error(msg || `Export failed (${res.status})`);
   }
   return res.blob();
 }
